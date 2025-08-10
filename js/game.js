@@ -121,11 +121,22 @@ function setFarmWorkers(x,y,delta){
 }
 const farmHasStaffedNeighbor=(x,y)=>{const c=state.map[idx(x,y)]; if(!c||c.type!==T.FARM||(c.wrk|0)<=0) return false; for(const d of DIRS){const nx=x+d[0],ny=y+d[1]; if(!inBounds(nx,ny))continue; const n=state.map[idx(nx,ny)]; if(n&&n.type===T.FARM&&(n.wrk|0)>0) return true} return false};
 function updateFarmSynergy(d){
+  // First pass: compute which farms have a 4-way staffed neighbor
+  const hasArr=new Array(state.size.w*state.size.h).fill(false);
+  each((x,y,c)=>{
+    if(c.type!==T.FARM || (c.wrk|0)<=0) return;
+    for(const dxy of DIRS){
+      const nx=x+dxy[0], ny=y+dxy[1];
+      if(!inBounds(nx,ny)) continue;
+      const n=state.map[idx(nx,ny)];
+      if(n && n.type===T.FARM && (n.wrk|0)>0){ hasArr[idx(x,y)]=true; break; }
+    }
+  });
+  // Second pass: update fx state
   each((x,y,c)=>{
     if(c.type!==T.FARM){ if(c.fx) c.fx=0; return }
-    const has=farmHasStaffedNeighbor(x,y);
-    const prev=c.fx|0;
-    if(has){ c.fx = prev===0?1:prev===1?2:2; if(c.fx===2 && prev!==2){ if(d) d.events.push(`Farm synergy active at (${x},${y})`); } }
+    const prev=c.fx|0, has=hasArr[idx(x,y)];
+    if(has){ c.fx = prev===0?1:prev===1?2:2; if(c.fx===2 && prev!==2){ if(d) d.events.push(`Farm synergy active at (${x},${y})`) } }
     else { c.fx = 0; }
   });
 }
@@ -183,13 +194,30 @@ function startUpgrade(x,y,c,s){
 $('end').onclick=()=>endTurn();
 function endTurn(){
   const d={G:0,F:0,W:0,P:0,events:[]};
-  // Build progress
-  each((x,y,c)=>{if(c&&c.upg){if(--c.upg.left<=0){const to=c.upg.to; const spec=c.upg.spec; c.type=to; if(spec&&spec.instant){for(const k in spec.instant){const v=spec.instant[k]; if(k==='P'){state.people+=v; d.P+=v}else d[k]+=v}} c.upg=null; reveal(x,y,1); d.events.push(`Completed ${String(to).toUpperCase()} at (${x},${y})`)} else if(c.upg.total>1){c.upg.prog=(c.upg.total-c.upg.left)}}});
-  // Base production & farms
+  // 1) Base production & farms (use current tile types before upgrades complete)
   each((x,y,c)=>{ if(c.type===T.FARM){ if((c.wrk|0)>0) d.F+=2+(((c.fx|0)===2)?1:0) } else {const yld=BASE[c.type]; if(yld) for(const k in yld) d[k]+=yld[k]} });
   applyAdjacencyBonuses(d);
+  // 2) Build progress (complete upgrades, aggregate instant into d; delay applying P to population until after feeding)
+  each((x,y,c)=>{
+    if(c&&c.upg){
+      if(--c.upg.left<=0){
+        const to=c.upg.to; const spec=c.upg.spec; c.type=to;
+        if(spec&&spec.instant){
+          for(const k in spec.instant){
+            const v=spec.instant[k];
+            if(k==='P'){ d.P+=v; } else { d[k]=(d[k]|0)+v; }
+          }
+        }
+        c.upg=null; reveal(x,y,1);
+        d.events.push(`Completed ${String(to).toUpperCase()} at (${x},${y})`);
+      } else if(c.upg.total>1){
+        c.upg.prog=(c.upg.total-c.upg.left);
+      }
+    }
+  });
+  // 3) Apply resource deltas to state (G/F/W only)
   state.gold+=d.G; state.food+=d.F; state.wood+=d.W;
-  // Feeding
+  // 4) Feeding
   const need=state.people;
   const fed=Math.min(state.food, need);
   state.food -= fed;
@@ -200,17 +228,20 @@ function endTurn(){
     if (state.people > 0) { state.people--; d.P--; d.events.push('Starvation: −1 Person due to shortage.'); }
     state.food = 0;
   }
-  // Growth (10F -> +1P)
+  // 5) Growth (10F -> +1P)
   const growth = Math.floor(state.food / 10);
   if (growth > 0) { state.people += growth; d.P += growth; state.food -= growth * 10; d.events.push(`Population growth: +${growth} (used ${growth*10} F).`); }
   else d.events.push(`Food stored: ${state.food}/10 toward next person.`);
+  // 6) Apply population gains from upgrades at end of turn
+  if (d.P>0){ state.people += d.P; }
+  // Year/action, events, synergy
   state.year++;  state.actions=Math.max(0,state.people-farmWorkers());
-  randomEvent(d);
+  if(!state.noEvents) randomEvent(d);
   state.actions=Math.max(0,state.people-farmWorkers());
   updateFarmSynergy(d);
   hud(); draw(); summary(d); winLose();
   console.log('Debug: Food before calculation:', state.food);
-  console.log('Debug: Workers on farms:', state.map.filter(c => c && c.type === T.FARM && c.wrk > 0).length);
+  console.log('Debug: Workers on farms:', farmWorkers());
   console.log('Debug: Food added this turn:', d.F);
   return d;
 }
