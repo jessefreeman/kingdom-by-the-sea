@@ -38,7 +38,8 @@ const EXPLORE={RISK:0.25,FOOD:1};
 // ===== State / Canvas =====
 const cell=t=>({type:t,disc:false,upg:null,wrk:0,fx:0}); // farm: wrk workers, fx=synergy flag
 const canvas=$('gameCanvas'), ctx=canvas.getContext('2d');
-const resize=()=>{canvas.width=state.size.w*state.size.t;canvas.height=state.size.h*state.size.t};
+const resize=()=>{canvas.width=state.size.w*state.size.t;canvas.height=state.size.h*state.size.t; try{ if(typeof Renderer!=='undefined'&&Renderer.onResize) Renderer.onResize(); }catch(e){} };
+function onWindowResize(){ Renderer.onResize(); }
 
 // ===== Generation =====
 function generate(seed=Date.now(),size='medium'){
@@ -74,7 +75,87 @@ function tile(x,y,c){
   if(c.type===T.FARM && (c.fx|0)===2 && c.disc){ctx.save();ctx.font=`bold ${Math.max(8,Math.floor(ts*.5))}px ui-monospace,Menlo`;ctx.textAlign='right';ctx.textBaseline='top';ctx.fillStyle='#fff';ctx.globalAlpha=.9;ctx.fillText('+',px+ts-3,py+2);ctx.restore();}
   if(c.upg&&c.upg.total>1){ctx.save();ctx.fillStyle='#000';ctx.globalAlpha=.45;ctx.fillRect(px+2,py+ts-10,24,8);ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.font='bold 9px ui-monospace,Menlo'; const step=c.upg.prog||0; ctx.fillText(`${step}/${c.upg.total}`,px+14,py+ts-6);ctx.restore()}
 }
-function draw(){ctx.clearRect(0,0,canvas.width,canvas.height); each((x,y,c)=>tile(x,y,c))}
+// Renderer manager: allows swapping renderers (debug canvas vs. future three.js)
+const Renderer = (()=>{
+  let current='debug';
+  const impls={
+    debug:{
+      init(){ canvas.style.display='block'; },
+      draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); each((x,y,c)=>tile(x,y,c)); },
+      resize(){ resize(); },
+      destroy(){ /* no-op for canvas */ }
+    },
+    three:{
+      _inited:false,_loading:false,_wrap:null,_renderer:null,_scene:null,_camera:null,_tiles:null,_THREE:null,_angle:0,_radius:8,_height:6,_raf:null,
+      async _load(){ if(this._THREE||this._loading) return; this._loading=true; try{ this._THREE = await import('https://unpkg.com/three@0.158.0/build/three.module.js'); } finally { this._loading=false; } },
+      async init(){
+        await this._load(); const THREE=this._THREE; if(!THREE) return; this._inited=true;
+        const stage=document.getElementById('stageWrap');
+        // Container below the 2D canvas
+        const wrap=document.createElement('div'); wrap.id='threeWrap'; Object.assign(wrap.style,{position:'absolute',inset:'8px',zIndex:0}); stage.appendChild(wrap); this._wrap=wrap;
+        // Make 2D canvas transparent and keep it on top for clicks/UI
+        canvas.style.background='transparent'; canvas.style.zIndex=1; canvas.style.position='relative';
+        // Renderer
+        const rend=new THREE.WebGLRenderer({antialias:false,alpha:true}); rend.setPixelRatio(1); rend.domElement.style.imageRendering='pixelated'; wrap.appendChild(rend.domElement); this._renderer=rend;
+        // Scene + camera
+        const scene=new THREE.Scene(); scene.background=null; this._scene=scene;
+        const cam=new THREE.PerspectiveCamera(45,1,0.1,1000); this._camera=cam;
+        // Lights
+        scene.add(new THREE.AmbientLight(0xffffff,0.9)); const dir=new THREE.DirectionalLight(0xffffff,0.6); dir.position.set(3,5,2); scene.add(dir);
+        // Tile group
+        this._tiles=new THREE.Group(); scene.add(this._tiles);
+        // Controls (simple Y orbit)
+        let dragging=false,lastX=0; const onDown=e=>{dragging=true; lastX=e.clientX}; const onMove=e=>{ if(!dragging) return; const dx=e.clientX-lastX; lastX=e.clientX; this._angle+=(dx*0.01); this._renderOnce(); }; const onUp=()=>{dragging=false};
+        rend.domElement.addEventListener('mousedown',onDown); window.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+        this._controls={onDown,onMove,onUp};
+        this.resize();
+        this._syncAllTiles();
+        this._renderOnce();
+      },
+      _tileTextureFor(x,y,c){ const THREE=this._THREE; const ts=state.size.t|0; const size=Math.max(24,ts); const cnv=document.createElement('canvas'); cnv.width=size; cnv.height=size; const g=cnv.getContext('2d');
+        // Base color per tile type, with simple coast detection like debug
+        let t=rt(c)||T.WATER; let fill=C[t]||'#333'; if(t===T.WATER){ let coast=false; for(const d of DIRS){ const nx=x+d[0],ny=y+d[1]; if(inBounds(nx,ny)){ const n=rt(state.map[idx(nx,ny)])||T.WATER; if(n!==T.WATER){ coast=true; break; } } } fill=coast?C.coast:C[T.WATER]; }
+        g.fillStyle=fill; g.fillRect(0,0,size,size);
+        // Fog for undiscovered
+        if(!c.disc){ g.fillStyle=C.fog; g.globalAlpha=0.75; g.fillRect(0,0,size,size); g.globalAlpha=1; }
+        // Label like debug
+        const tl=(c.disc?(LABEL[c.upg?rt(c):c.type]||(String(c.upg?rt(c):c.type).slice(0,2).toUpperCase())):'?');
+        if(tl){ g.save(); g.globalAlpha=0.85; g.fillStyle='#ffffff'; g.textAlign='center'; g.textBaseline='middle'; g.font=`bold ${Math.max(9,Math.floor(size*0.55))}px ui-monospace,Menlo`; g.fillText(tl,size/2,size/2+0.5); g.restore(); }
+        // Synergy + marker
+        if(c.type===T.FARM && (c.fx|0)===2 && c.disc){ g.save(); g.globalAlpha=0.95; g.fillStyle='#fff'; g.textAlign='right'; g.textBaseline='top'; g.font=`bold ${Math.max(8,Math.floor(size*0.45))}px ui-monospace,Menlo`; g.fillText('+',size-3,2); g.restore(); }
+        const tex=new THREE.CanvasTexture(cnv); tex.magFilter=THREE.NearestFilter; tex.minFilter=THREE.NearestFilter; return tex; },
+      _buildTileMesh(x,y,c){ const THREE=this._THREE; const tex=this._tileTextureFor(x,y,c); const geo=new THREE.BoxGeometry(1,0.2,1); const mat=new THREE.MeshLambertMaterial({map:tex,flatShading:true}); const mesh=new THREE.Mesh(geo,mat);
+        mesh.position.set(x+0.5,0,y+0.5); return mesh; },
+      _syncAllTiles(){ if(!this._inited) return; const THREE=this._THREE; const g=this._tiles; while(g.children.length){ const m=g.children.pop(); if(m.material&&m.material.map) m.material.map.dispose(); if(m.material) m.material.dispose(); if(m.geometry) m.geometry.dispose(); }
+        for(let y=0;y<state.size.h;y++) for(let x=0;x<state.size.w;x++){ const c=state.map[idx(x,y)]; if(!c) continue; const m=this._buildTileMesh(x,y,c); g.add(m); }
+        // Center camera radius based on map size
+        const w=state.size.w, h=state.size.h; const maxDim=Math.max(w,h); this._radius=maxDim*0.9; this._height=Math.max(4, maxDim*0.6); this._angle=0.6;
+        this._updateCamera();
+      },
+      _updateCamera(){ const cam=this._camera; if(!cam) return; const w=state.size.w, h=state.size.h; const cx=w/2, cz=h/2; const y=this._height; const r=this._radius; const ax=this._angle; const px=cx+Math.cos(ax)*r; const pz=cz+Math.sin(ax)*r; cam.position.set(px,y,pz); cam.lookAt(cx,0,cz); },
+      _renderOnce(){ if(!this._inited) return; this._updateCamera(); this._renderer.render(this._scene,this._camera); },
+      draw(){ if(!this._inited){ /* if not ready, try to init */ return; } this._syncAllTiles(); this._renderOnce(); },
+      resize(){ if(!this._inited||!this._renderer||!this._camera) return; const w=canvas.clientWidth||canvas.width; const h=canvas.clientHeight||canvas.height; this._renderer.setSize(w,h,false); this._camera.aspect=w/h; this._camera.updateProjectionMatrix(); this._renderOnce(); },
+      destroy(){ if(this._renderer){
+          // remove mouse listeners
+          if(this._controls){ this._renderer.domElement.removeEventListener('mousedown',this._controls.onDown); window.removeEventListener('mousemove',this._controls.onMove); window.removeEventListener('mouseup',this._controls.onUp); this._controls=null; }
+          // dispose GL resources and remove canvas
+          this._renderer.dispose(); const el=this._renderer.domElement; if(el&&el.parentNode){ el.parentNode.removeChild(el); }
+        }
+        this._renderer=null;
+        if(this._wrap&&this._wrap.parentNode) this._wrap.parentNode.removeChild(this._wrap); this._wrap=null;
+        if(this._tiles){ this._tiles.children.forEach(m=>{ if(m.material&&m.material.map) m.material.map.dispose(); if(m.material) m.material.dispose(); if(m.geometry) m.geometry.dispose(); }); }
+        this._scene=null; this._camera=null; this._tiles=null; this._inited=false; canvas.style.background=''; }
+    }
+  };
+  function set(name){ if(!impls[name]) return; if(current&&impls[current]&&impls[current].destroy) impls[current].destroy(); current=name; impls[current].init(); }
+  function get(){ return current }
+  function draw(){ impls[current].draw() }
+  function onResize(){ impls[current].resize() }
+  return {set,get,draw,onResize};
+})();
+
+function draw(){ Renderer.draw() }
 
 // ===== Input =====
 const canvasClick=(e)=>{
@@ -330,5 +411,7 @@ window.KBTS={
   canExplore, explore, isCoast, startUpgrade, applyAdjacencyBonuses,
   uniqueAvailable, noHouseNearby, houseNearby, setFarmWorkers, farmWorkers,
   updateFarmSynergy, endTurn, randomEvent, summary, countType, afford, whyNo,
-  showStart, start, tileInfo
+  showStart, start, tileInfo,
+  setRenderer: Renderer.set,
+  getRenderer: Renderer.get
 };
