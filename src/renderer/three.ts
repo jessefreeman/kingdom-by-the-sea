@@ -1038,7 +1038,13 @@ class ThreeRenderer implements RendererInterface {
         // Skip water tiles
         if (t === K.T.WATER) continue;
         
-        const heightLevel = (cell as any)?.h || 0;
+        let heightLevel = (cell as any)?.h || 0;
+        
+        // Reduce height by 1 when forest is cleared to grass (trees removed)
+        if (cell.type === K.T.FOREST && cell.upg && cell.upg.to === K.T.GRASS) {
+          heightLevel = Math.max(0, heightLevel - 1);
+        }
+        
         if (heightLevel > 0) {
           // Find the corresponding mesh for this tile
           const targetX = x - K.state.size.w / 2 + 0.5;
@@ -1170,7 +1176,14 @@ class ThreeRenderer implements RendererInterface {
           nH = neighborTween.mesh.position.y / ThreeRenderer.HEIGHT_PER_LEVEL;
         } else {
           // Use static height (0 for water or non-animated tiles during animation)
-          nH = (nt === T.WATER || this.isAnimating) ? 0 : (nCell?.h || 0);
+          let staticHeight = (nt === T.WATER || this.isAnimating) ? 0 : (nCell?.h || 0);
+          
+          // Apply height reduction for cleared forests
+          if (nCell && nCell.type === T.FOREST && nCell.upg && nCell.upg.to === T.GRASS && !this.isAnimating) {
+            staticHeight = Math.max(0, staticHeight - 1);
+          }
+          
+          nH = staticHeight;
         }
       }
       
@@ -1374,8 +1387,13 @@ class ThreeRenderer implements RendererInterface {
         // Rotate the plane to lie flat on the ground
         mesh.rotation.x = -Math.PI / 2; // Rotate 90 degrees to be horizontal
         
-        const heightLevel = (state.map[idx(x, y)] as any)?.h | 0;
+        let heightLevel = (state.map[idx(x, y)] as any)?.h | 0;
         const isWater = t === T.WATER;
+        
+        // Reduce height by 1 when forest is cleared to grass (trees removed)
+        if (cell.type === T.FOREST && cell.upg && cell.upg.to === T.GRASS) {
+          heightLevel = Math.max(0, heightLevel - 1);
+        }
         
         // During animation, non-water tiles start at water level and animate up
         const yPos = isWater ? 0 : (this.isAnimating ? 0 : heightLevel * ThreeRenderer.HEIGHT_PER_LEVEL);
@@ -1405,7 +1423,14 @@ class ThreeRenderer implements RendererInterface {
             if (inBounds(nx, ny)) {
               const nCell = state.map[idx(nx, ny)] as any;
               const nt = nCell ? (nCell.upg ? nCell.upg.to : nCell.type) : null;
-              nH = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
+              let neighborHeight = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
+              
+              // Apply same height reduction for cleared forests
+              if (nCell && nCell.type === T.FOREST && nCell.upg && nCell.upg.to === T.GRASS) {
+                neighborHeight = Math.max(0, neighborHeight - 1);
+              }
+              
+              nH = neighborHeight;
             }
             const diff = heightLevel - nH;
             if (diff <= 0) continue;
