@@ -1418,29 +1418,61 @@ function computeHeightMap() {
   // Copy to working heights
   const heights = baseHeights.slice();
 
-  // Step 1: mountains that touch any other mountain (8-dir) grow by +1
-  const mountainGrow = new Array(W * H).fill(0);
+  // Step 1: Tiered mountain heights based on depth inside mountain component (8-dir)
+  // Depth 0 for boundary mountains (adjacent to any non-mountain), deeper tiles get larger depth.
+  const mDepth = new Array(W * H).fill(-1);
+  const q: Array<[number, number]> = [];
+  // Seed boundary mountains
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const i = I(x, y);
       const c = state.map[i] as any;
       if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let touches = false;
+      let isBoundary = false;
       for (const [dx, dy] of DIRS8) {
         const nx = x + dx,
           ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
+        if (!inBounds(nx, ny)) {
+          isBoundary = true; // edge of map counts as boundary
+          break;
+        }
         const nc = state.map[I(nx, ny)] as any;
-        if (nc && rt(nc) === T.MOUNTAIN) {
-          touches = true;
+        if (!nc || rt(nc) !== T.MOUNTAIN) {
+          isBoundary = true;
           break;
         }
       }
-      if (touches) mountainGrow[i] = 1;
+      if (isBoundary) {
+        mDepth[i] = 0;
+        q.push([x, y]);
+      }
     }
-  for (let i = 0; i < heights.length; i++) {
-    if (mountainGrow[i] > 0) heights[i] += mountainGrow[i];
+  // BFS inward to assign depth
+  while (q.length) {
+    const [cx, cy] = q.shift()!;
+    const ci = I(cx, cy);
+    for (const [dx, dy] of DIRS8) {
+      const nx = cx + dx,
+        ny = cy + dy;
+      if (!inBounds(nx, ny)) continue;
+      const ni = I(nx, ny);
+      const nc = state.map[ni] as any;
+      if (!nc || rt(nc) !== T.MOUNTAIN) continue;
+      if (mDepth[ni] === -1) {
+        mDepth[ni] = (mDepth[ci] | 0) + 1;
+        q.push([nx, ny]);
+      }
+    }
   }
+  // Set mountain heights: base 3 plus depth (unvisited single mountains treated as boundary depth 0)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c || rt(c) !== T.MOUNTAIN) continue;
+      const d = mDepth[i] >= 0 ? mDepth[i] : 0;
+      heights[i] = 3 + d;
+    }
 
   // Step 2: for each mountain tile, increase all surrounding tiles (8-dir)
   // to at least mountainHeight - 1, skipping water tiles (water must stay 0)
