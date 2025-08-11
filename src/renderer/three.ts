@@ -10,6 +10,7 @@
 // - R key: Reset camera to default position
 // - C key: Center camera on map
 // - P key: Print current values to console
+// - I key: Start/stop island generation animation
 // - 1,2,3 keys: Toggle X, Y, Z axis rotation (X-axis now disabled)
 // - WASD: W/S zoom in/out, A/D rotate left/right
 // - Q/E: Distance adjustment
@@ -55,6 +56,17 @@ class ThreeRenderer implements RendererInterface {
   private debugElement: HTMLElement | null = null;
   public inited = false;
   private static readonly HEIGHT_PER_LEVEL = 0.5; // 0.5 world units per height level (half previous)
+  
+  // Animation system for island generation
+  private isAnimating = false;
+  private animationStartTime = 0;
+  private animationDuration = 3000; // 3 seconds total animation
+  private tileAnimationData: Map<string, {
+    targetHeight: number;
+    currentHeight: number;
+    animationStartTime: number;
+    animationDelay: number;
+  }> = new Map();
 
   async init() {
     const K = (window as any).KBTS;
@@ -770,8 +782,18 @@ class ThreeRenderer implements RendererInterface {
     const render = () => {
       this.animationFrameId = requestAnimationFrame(render);
 
+      // Update animation if active
+      if (this.isAnimating) {
+        const currentTime = Date.now();
+        const animationChanged = this.updateAnimation(currentTime);
+        if (animationChanged) {
+          this.createTiles(); // Recreate tiles with updated heights
+          this.needsRender = true;
+        }
+      }
+
       // Only render if something has changed or we're actively moving
-      if (this.needsRender || this.isDragging || this.isRotating) {
+      if (this.needsRender || this.isDragging || this.isRotating || this.isAnimating) {
         if (this.renderer && this.scene && this.camera) {
           this.renderer.render(this.scene, this.camera);
         }
@@ -908,6 +930,18 @@ class ThreeRenderer implements RendererInterface {
       console.log(`camera.position:`, this.camera.position);
       e.preventDefault();
     }
+
+    // Start island animation with 'I' key
+    if (e.key === "i" || e.key === "I") {
+      if (this.isAnimating) {
+        this.stopIslandAnimation();
+        console.log("Island animation stopped");
+      } else {
+        this.startIslandAnimation();
+        console.log("Island animation started");
+      }
+      e.preventDefault();
+    }
   }
 
   // Public method to focus camera on a specific tile
@@ -967,6 +1001,121 @@ class ThreeRenderer implements RendererInterface {
     this.camera.zoom = 1;
     this.camera.updateProjectionMatrix();
     this.updateCameraPosition();
+  }
+
+  // Animation methods for island generation
+  public startIslandAnimation() {
+    if (this.isAnimating) return;
+    
+    const K = (window as any).KBTS;
+    if (!K) return;
+
+    this.isAnimating = true;
+    this.animationStartTime = Date.now();
+    this.tileAnimationData.clear();
+
+    // Analyze all tiles and calculate animation timing
+    const tiles: Array<{x: number, y: number, height: number}> = [];
+    
+    for (let y = 0; y < K.state.size.h; y++) {
+      for (let x = 0; x < K.state.size.w; x++) {
+        const cell = K.state.map[K.idx(x, y)];
+        if (!cell) continue;
+        
+        const rt = (c: any) => (c ? (c.upg ? c.upg.to : c.type) : null);
+        const t = rt(cell);
+        
+        // Skip water tiles
+        if (t === K.T.WATER) continue;
+        
+        const heightLevel = (cell as any)?.h || 0;
+        if (heightLevel > 0) {
+          tiles.push({ x, y, height: heightLevel });
+        }
+      }
+    }
+
+    // Sort tiles by height (highest first)
+    tiles.sort((a, b) => b.height - a.height);
+
+    // Calculate animation delays - higher tiles start first
+    const maxDelay = this.animationDuration * 0.7; // Use 70% of duration for staggered starts
+    const heightGroups = new Map<number, Array<{x: number, y: number}>>();
+    
+    // Group tiles by height
+    tiles.forEach(tile => {
+      if (!heightGroups.has(tile.height)) {
+        heightGroups.set(tile.height, []);
+      }
+      heightGroups.get(tile.height)!.push({x: tile.x, y: tile.y});
+    });
+
+    // Assign delays based on height groups
+    const uniqueHeights = Array.from(heightGroups.keys()).sort((a, b) => b - a);
+    const delayPerHeightGroup = maxDelay / uniqueHeights.length;
+
+    uniqueHeights.forEach((height, heightIndex) => {
+      const tilesInGroup = heightGroups.get(height)!;
+      const baseDelay = heightIndex * delayPerHeightGroup;
+      
+      tilesInGroup.forEach((pos, tileIndex) => {
+        const tileKey = `${pos.x},${pos.y}`;
+        const randomOffset = Math.random() * delayPerHeightGroup * 0.3; // Add some randomness
+        
+        this.tileAnimationData.set(tileKey, {
+          targetHeight: height,
+          currentHeight: 0,
+          animationStartTime: this.animationStartTime + baseDelay + randomOffset,
+          animationDelay: baseDelay + randomOffset
+        });
+      });
+    });
+
+    console.log(`Starting island animation with ${tiles.length} tiles, ${uniqueHeights.length} height groups`);
+  }
+
+  public stopIslandAnimation() {
+    this.isAnimating = false;
+    this.tileAnimationData.clear();
+    this.createTiles(); // Reset to final state
+  }
+
+  private updateAnimation(currentTime: number) {
+    if (!this.isAnimating) return false;
+
+    let anyTileAnimating = false;
+    
+    this.tileAnimationData.forEach((data, tileKey) => {
+      if (data.currentHeight >= data.targetHeight) return;
+      
+      const timeElapsed = currentTime - data.animationStartTime;
+      if (timeElapsed < 0) {
+        anyTileAnimating = true;
+        return; // Not started yet
+      }
+      
+      // Duration for each tile to reach full height
+      const tileDuration = this.animationDuration * 0.8; // 80% of total duration for individual tile growth
+      const progress = Math.min(1, timeElapsed / tileDuration);
+      
+      // Ease-out cubic for smooth deceleration
+      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      
+      data.currentHeight = easedProgress * data.targetHeight;
+      
+      if (progress < 1) {
+        anyTileAnimating = true;
+      }
+    });
+
+    // Stop animation when all tiles are done
+    if (!anyTileAnimating) {
+      this.isAnimating = false;
+      this.tileAnimationData.clear();
+      console.log("Island animation complete");
+    }
+
+    return anyTileAnimating;
   }
 
   private createTiles() {
@@ -1051,10 +1200,24 @@ class ThreeRenderer implements RendererInterface {
         // Position mesh on the ground (XZ plane at Y=0)
         // Rotate the plane to lie flat on the ground
         mesh.rotation.x = -Math.PI / 2; // Rotate 90 degrees to be horizontal
+        
         const heightLevel = (state.map[idx(x, y)] as any)?.h | 0;
-        const yPos = Math.max(0, heightLevel) * ThreeRenderer.HEIGHT_PER_LEVEL;
-        // Water is always flat at 0
         const isWater = t === T.WATER;
+        
+        // Use animated height if animation is active
+        let currentHeight = heightLevel;
+        if (this.isAnimating && !isWater) {
+          const tileKey = `${x},${y}`;
+          const animData = this.tileAnimationData.get(tileKey);
+          if (animData) {
+            currentHeight = animData.currentHeight;
+          } else if (heightLevel > 0) {
+            // If not in animation data but has height, it should be at 0 during animation
+            currentHeight = 0;
+          }
+        }
+        
+        const yPos = Math.max(0, currentHeight) * ThreeRenderer.HEIGHT_PER_LEVEL;
         mesh.position.set(
           x - state.size.w / 2 + 0.5,
           isWater ? 0 : yPos,
@@ -1065,7 +1228,7 @@ class ThreeRenderer implements RendererInterface {
         this.tileMeshes.push(mesh);
 
         // Add textured side faces for raised tiles against lower neighbors
-        if (!isWater && heightLevel > 0) {
+        if (!isWater && currentHeight > 0) {
           const dirs = [
             { dx: 0, dy: -1, axis: "z" as const, sign: -1 as const }, // north
             { dx: 0, dy: 1, axis: "z" as const, sign: 1 as const }, // south
@@ -1079,9 +1242,21 @@ class ThreeRenderer implements RendererInterface {
             if (inBounds(nx, ny)) {
               const nCell = state.map[idx(nx, ny)] as any;
               const nt = nCell ? (nCell.upg ? nCell.upg.to : nCell.type) : null;
-              nH = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
+              
+              // For animation, also consider animated neighbor heights
+              let neighborCurrentHeight = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
+              if (this.isAnimating && nt !== T.WATER) {
+                const neighborKey = `${nx},${ny}`;
+                const neighborAnimData = this.tileAnimationData.get(neighborKey);
+                if (neighborAnimData) {
+                  neighborCurrentHeight = neighborAnimData.currentHeight;
+                } else if ((nCell?.h || 0) > 0) {
+                  neighborCurrentHeight = 0; // Not animated yet
+                }
+              }
+              nH = neighborCurrentHeight;
             }
-            const diff = heightLevel - nH;
+            const diff = currentHeight - nH;
             if (diff <= 0) continue;
 
             const hWorld = diff * ThreeRenderer.HEIGHT_PER_LEVEL;
@@ -1263,6 +1438,15 @@ class RendererManager {
   resetCamera() {
     this.threeRenderer.resetCamera();
   }
+
+  // Expose animation methods
+  startIslandAnimation() {
+    this.threeRenderer.startIslandAnimation();
+  }
+
+  stopIslandAnimation() {
+    this.threeRenderer.stopIslandAnimation();
+  }
 }
 
 // Create global renderer instance
@@ -1277,6 +1461,8 @@ const rendererManager = new RendererManager();
   focusOnTile: (x: number, y: number, animate: boolean = true) =>
     rendererManager.focusOnTile(x, y, animate),
   resetCamera: () => rendererManager.resetCamera(),
+  startIslandAnimation: () => rendererManager.startIslandAnimation(),
+  stopIslandAnimation: () => rendererManager.stopIslandAnimation(),
 };
 
 // Auto-initialize the Three.js overlay when the page loads
