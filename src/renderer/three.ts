@@ -60,13 +60,19 @@ class ThreeRenderer implements RendererInterface {
   // Animation system for island generation
   private isAnimating = false;
   private animationStartTime = 0;
-  private animationDuration = 3000; // 3 seconds total animation
-  private tileAnimationData: Map<string, {
+  private animationDuration = 2000; // 2 seconds total animation (faster)
+  private activeTweens: Array<{
+    mesh: any;
+    startY: number;
+    targetY: number;
+    startTime: number;
+    duration: number;
+    completed: boolean;
+    sideFaces: any[]; // Store side face meshes for this tile
+    x: number;
+    y: number;
     targetHeight: number;
-    currentHeight: number;
-    animationStartTime: number;
-    animationDelay: number;
-  }> = new Map();
+  }> = [];
 
   async init() {
     const K = (window as any).KBTS;
@@ -218,7 +224,8 @@ class ThreeRenderer implements RendererInterface {
     // Try to get texture from atlas first
     if (tileAtlas.isLoaded()) {
       const useLetters = true; // Use letter layer during development
-      const useFog = !isDiscovered;
+      // Water tiles should never have fog - always use row 2 (non-fogged)
+      const useFog = tileType === T.WATER ? false : !isDiscovered;
 
       const texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
       if (texture) {
@@ -284,8 +291,8 @@ class ThreeRenderer implements RendererInterface {
     ctx.fillStyle = fillColor;
     ctx.fillRect(0, 0, size, size);
 
-    // Fog overlay for undiscovered tiles
-    if (!isDiscovered) {
+    // Fog overlay for undiscovered tiles (but not water tiles)
+    if (!isDiscovered && tileType !== T.WATER) {
       ctx.fillStyle = C.fog || "#0a0d1a";
       ctx.globalAlpha = 0.75;
       ctx.fillRect(0, 0, size, size);
@@ -786,8 +793,8 @@ class ThreeRenderer implements RendererInterface {
       if (this.isAnimating) {
         const currentTime = Date.now();
         const animationChanged = this.updateAnimation(currentTime);
+        // Don't recreate tiles during animation - just update positions
         if (animationChanged) {
-          this.createTiles(); // Recreate tiles with updated heights
           this.needsRender = true;
         }
       }
@@ -1012,10 +1019,13 @@ class ThreeRenderer implements RendererInterface {
 
     this.isAnimating = true;
     this.animationStartTime = Date.now();
-    this.tileAnimationData.clear();
+    this.activeTweens = [];
 
-    // Analyze all tiles and calculate animation timing
-    const tiles: Array<{x: number, y: number, height: number}> = [];
+    // Create initial tiles at water level, then animate them up
+    this.createTiles();
+
+    // Find all tiles that need to be animated
+    const tilesToAnimate: Array<{x: number, y: number, height: number, mesh: any}> = [];
     
     for (let y = 0; y < K.state.size.h; y++) {
       for (let x = 0; x < K.state.size.w; x++) {
@@ -1030,27 +1040,39 @@ class ThreeRenderer implements RendererInterface {
         
         const heightLevel = (cell as any)?.h || 0;
         if (heightLevel > 0) {
-          tiles.push({ x, y, height: heightLevel });
+          // Find the corresponding mesh for this tile
+          const targetX = x - K.state.size.w / 2 + 0.5;
+          const targetZ = y - K.state.size.h / 2 + 0.5;
+          
+          const mesh = this.tileMeshes.find(m => 
+            Math.abs(m.position.x - targetX) < 0.1 && 
+            Math.abs(m.position.z - targetZ) < 0.1 &&
+            m.position.y > -0.1 // Make sure it's not a side face
+          );
+          
+          if (mesh) {
+            tilesToAnimate.push({ x, y, height: heightLevel, mesh });
+          }
         }
       }
     }
 
     // Sort tiles by height (highest first)
-    tiles.sort((a, b) => b.height - a.height);
+    tilesToAnimate.sort((a, b) => b.height - a.height);
 
-    // Calculate animation delays - higher tiles start first
-    const maxDelay = this.animationDuration * 0.7; // Use 70% of duration for staggered starts
-    const heightGroups = new Map<number, Array<{x: number, y: number}>>();
+    // Calculate animation timing
+    const maxDelay = this.animationDuration * 0.6;
+    const heightGroups = new Map<number, Array<{x: number, y: number, mesh: any}>>();
     
     // Group tiles by height
-    tiles.forEach(tile => {
+    tilesToAnimate.forEach(tile => {
       if (!heightGroups.has(tile.height)) {
         heightGroups.set(tile.height, []);
       }
-      heightGroups.get(tile.height)!.push({x: tile.x, y: tile.y});
+      heightGroups.get(tile.height)!.push({x: tile.x, y: tile.y, mesh: tile.mesh});
     });
 
-    // Assign delays based on height groups
+    // Create tweens for each tile
     const uniqueHeights = Array.from(heightGroups.keys()).sort((a, b) => b - a);
     const delayPerHeightGroup = maxDelay / uniqueHeights.length;
 
@@ -1058,26 +1080,150 @@ class ThreeRenderer implements RendererInterface {
       const tilesInGroup = heightGroups.get(height)!;
       const baseDelay = heightIndex * delayPerHeightGroup;
       
-      tilesInGroup.forEach((pos, tileIndex) => {
-        const tileKey = `${pos.x},${pos.y}`;
-        const randomOffset = Math.random() * delayPerHeightGroup * 0.3; // Add some randomness
+      tilesInGroup.forEach((tile, tileIndex) => {
+        const randomOffset = Math.random() * delayPerHeightGroup * 0.2;
+        const startTime = this.animationStartTime + baseDelay + randomOffset;
+        const duration = this.animationDuration * 0.5;
         
-        this.tileAnimationData.set(tileKey, {
-          targetHeight: height,
-          currentHeight: 0,
-          animationStartTime: this.animationStartTime + baseDelay + randomOffset,
-          animationDelay: baseDelay + randomOffset
+        // Set initial position (at water level)
+        tile.mesh.position.y = 0;
+        
+        this.activeTweens.push({
+          mesh: tile.mesh,
+          startY: 0,
+          targetY: height * ThreeRenderer.HEIGHT_PER_LEVEL,
+          startTime: startTime,
+          duration: duration,
+          completed: false,
+          sideFaces: [],
+          x: tile.x,
+          y: tile.y,
+          targetHeight: height
         });
       });
     });
 
-    console.log(`Starting island animation with ${tiles.length} tiles, ${uniqueHeights.length} height groups`);
+    console.log(`Starting optimized island animation with ${tilesToAnimate.length} tiles, ${uniqueHeights.length} height groups`);
   }
 
   public stopIslandAnimation() {
     this.isAnimating = false;
-    this.tileAnimationData.clear();
+    // Clean up side faces
+    this.activeTweens.forEach(tween => {
+      tween.sideFaces.forEach(face => {
+        if (this.scene) this.scene.remove(face);
+        face.geometry.dispose();
+        face.material.dispose();
+      });
+    });
+    this.activeTweens = [];
     this.createTiles(); // Reset to final state
+  }
+
+  private createAnimatedSideFaces(tween: any, currentHeight: number) {
+    const K = (window as any).KBTS;
+    if (!K || !window.THREE) return;
+
+    const THREE = window.THREE;
+    const { state, idx, inBounds, T } = K;
+    
+    // Clean up existing side faces
+    tween.sideFaces.forEach((face: any) => {
+      if (this.scene) this.scene.remove(face);
+      face.geometry.dispose();
+      face.material.dispose();
+    });
+    tween.sideFaces = [];
+
+    const x = tween.x;
+    const y = tween.y;
+    const cell = state.map[idx(x, y)];
+    if (!cell) return;
+
+    const rt = (c: any) => (c ? (c.upg ? c.upg.to : c.type) : null);
+    const t = rt(cell);
+    if (t === T.WATER) return;
+
+    const currentHeightLevels = currentHeight / ThreeRenderer.HEIGHT_PER_LEVEL;
+    if (currentHeightLevels <= 0.1) return; // Too low to show sides
+
+    const dirs = [
+      { dx: 0, dy: -1, axis: "z" as const, sign: -1 as const }, // north
+      { dx: 0, dy: 1, axis: "z" as const, sign: 1 as const }, // south
+      { dx: -1, dy: 0, axis: "x" as const, sign: -1 as const }, // west
+      { dx: 1, dy: 0, axis: "x" as const, sign: 1 as const }, // east
+    ];
+
+    for (const d of dirs) {
+      const nx = x + d.dx;
+      const ny = y + d.dy;
+      let nH = 0;
+      
+      if (inBounds(nx, ny)) {
+        const nCell = state.map[idx(nx, ny)] as any;
+        const nt = nCell ? (nCell.upg ? nCell.upg.to : nCell.type) : null;
+        
+        // Check if neighbor is also animating
+        const neighborTween = this.activeTweens.find(tw => tw.x === nx && tw.y === ny);
+        if (neighborTween && nt !== T.WATER) {
+          // Use neighbor's current animated height
+          nH = neighborTween.mesh.position.y / ThreeRenderer.HEIGHT_PER_LEVEL;
+        } else {
+          // Use static height (0 for water or non-animated tiles during animation)
+          nH = (nt === T.WATER || this.isAnimating) ? 0 : (nCell?.h || 0);
+        }
+      }
+      
+      const diff = currentHeightLevels - nH;
+      if (diff <= 0.1) continue; // Not enough difference to show a side
+
+      const hWorld = diff * ThreeRenderer.HEIGHT_PER_LEVEL;
+      const yCenter = nH * ThreeRenderer.HEIGHT_PER_LEVEL + hWorld / 2;
+
+      // Get texture for side face
+      let sideKey = t || T.GRASS;
+      if (sideKey === T.WATER) sideKey = T.GRASS;
+      const sideTex = tileAtlas.getThreeTexture(sideKey, false, false);
+      if (sideTex) {
+        sideTex.wrapS = THREE.RepeatWrapping;
+        sideTex.wrapT = THREE.RepeatWrapping;
+        sideTex.repeat.set(1, Math.max(1, diff));
+      }
+
+      // Shading based on orientation
+      const baseShade = d.axis === "z"
+        ? d.sign < 0 ? 0.6 : 0.8  // north/south
+        : d.sign < 0 ? 0.7 : 0.9; // west/east
+      const heightShade = Math.max(0.6, 1 - (diff - 1) * 0.08);
+      const shade = Math.max(0.4, Math.min(1, baseShade * heightShade));
+
+      const sideMat = new THREE.MeshBasicMaterial({
+        map: sideTex || undefined,
+        side: THREE.DoubleSide,
+        color: new THREE.Color(shade, shade, shade),
+      });
+
+      const sideGeom = new THREE.PlaneGeometry(1, hWorld);
+      const side = new THREE.Mesh(sideGeom, sideMat);
+
+      const cx = x - state.size.w / 2 + 0.5;
+      const cz = y - state.size.h / 2 + 0.5;
+      const eps = 0.001;
+
+      if (d.axis === "z") {
+        const zEdge = cz + (d.sign < 0 ? -0.5 - eps : 0.5 + eps);
+        side.position.set(cx, yCenter, zEdge);
+        if (d.sign < 0) side.rotation.y = Math.PI;
+      } else {
+        side.rotation.y = Math.PI / 2;
+        const xEdge = cx + (d.sign < 0 ? -0.5 - eps : 0.5 + eps);
+        side.position.set(xEdge, yCenter, cz);
+      }
+
+      this.scene.add(side);
+      this.tileMeshes.push(side);
+      tween.sideFaces.push(side);
+    }
   }
 
   private updateAnimation(currentTime: number) {
@@ -1085,33 +1231,57 @@ class ThreeRenderer implements RendererInterface {
 
     let anyTileAnimating = false;
     
-    this.tileAnimationData.forEach((data, tileKey) => {
-      if (data.currentHeight >= data.targetHeight) return;
+    this.activeTweens.forEach(tween => {
+      if (tween.completed) return;
       
-      const timeElapsed = currentTime - data.animationStartTime;
+      const timeElapsed = currentTime - tween.startTime;
       if (timeElapsed < 0) {
         anyTileAnimating = true;
         return; // Not started yet
       }
       
-      // Duration for each tile to reach full height
-      const tileDuration = this.animationDuration * 0.8; // 80% of total duration for individual tile growth
-      const progress = Math.min(1, timeElapsed / tileDuration);
+      const progress = Math.min(1, timeElapsed / tween.duration);
       
-      // Ease-out cubic for smooth deceleration
-      const easedProgress = 1 - Math.pow(1 - progress, 3);
+      // Bounce easing function
+      let easedProgress;
+      if (progress < 1) {
+        const c4 = (2 * Math.PI) / 3;
+        easedProgress = progress === 0
+          ? 0
+          : Math.pow(2, -10 * progress) * Math.sin((progress * 10 - 0.75) * c4) + 1;
+      } else {
+        easedProgress = 1;
+        tween.completed = true;
+      }
       
-      data.currentHeight = easedProgress * data.targetHeight;
+      // Update mesh position directly
+      const newY = tween.startY + (tween.targetY - tween.startY) * easedProgress;
+      tween.mesh.position.y = newY;
+      
+      // Update side faces every few frames for performance (not every frame)
+      const frameCount = Math.floor(currentTime / 16.67); // ~60fps
+      if (frameCount % 3 === 0 || tween.completed) { // Update every 3rd frame
+        this.createAnimatedSideFaces(tween, newY);
+      }
       
       if (progress < 1) {
         anyTileAnimating = true;
       }
     });
 
-    // Stop animation when all tiles are done
+    // Stop animation when all tweens are done
     if (!anyTileAnimating) {
       this.isAnimating = false;
-      this.tileAnimationData.clear();
+      // Clean up animated side faces and recreate final state
+      this.activeTweens.forEach(tween => {
+        tween.sideFaces.forEach(face => {
+          if (this.scene) this.scene.remove(face);
+          face.geometry.dispose();
+          face.material.dispose();
+        });
+      });
+      this.activeTweens = [];
+      this.createTiles(); // Create final side faces
       console.log("Island animation complete");
     }
 
@@ -1182,11 +1352,14 @@ class ThreeRenderer implements RendererInterface {
         const hasSynergy =
           cell.type === T.FARM && (cell.fx || 0) === 2 && cell.disc;
 
-        // Create texture (respect FOW toggle)
+        // Create texture - water tiles always visible (no fog), land tiles respect discovery
+        const isWaterTile = (t === T.WATER);
+        const isDiscoveredForTexture = isWaterTile ? true : (K.state.fogEnabled !== false ? cell.disc : true);
+        
         const texture = this.createTileTexture(
           t || T.WATER,
           isCoast,
-          K.state.fogEnabled !== false ? cell.disc : true,
+          isDiscoveredForTexture,
           isSelected,
           label,
           hasSynergy
@@ -1204,23 +1377,12 @@ class ThreeRenderer implements RendererInterface {
         const heightLevel = (state.map[idx(x, y)] as any)?.h | 0;
         const isWater = t === T.WATER;
         
-        // Use animated height if animation is active
-        let currentHeight = heightLevel;
-        if (this.isAnimating && !isWater) {
-          const tileKey = `${x},${y}`;
-          const animData = this.tileAnimationData.get(tileKey);
-          if (animData) {
-            currentHeight = animData.currentHeight;
-          } else if (heightLevel > 0) {
-            // If not in animation data but has height, it should be at 0 during animation
-            currentHeight = 0;
-          }
-        }
+        // During animation, non-water tiles start at water level and animate up
+        const yPos = isWater ? 0 : (this.isAnimating ? 0 : heightLevel * ThreeRenderer.HEIGHT_PER_LEVEL);
         
-        const yPos = Math.max(0, currentHeight) * ThreeRenderer.HEIGHT_PER_LEVEL;
         mesh.position.set(
           x - state.size.w / 2 + 0.5,
-          isWater ? 0 : yPos,
+          yPos,
           y - state.size.h / 2 + 0.5
         );
 
@@ -1228,7 +1390,8 @@ class ThreeRenderer implements RendererInterface {
         this.tileMeshes.push(mesh);
 
         // Add textured side faces for raised tiles against lower neighbors
-        if (!isWater && currentHeight > 0) {
+        // Skip side faces during animation for performance
+        if (!isWater && heightLevel > 0 && !this.isAnimating) {
           const dirs = [
             { dx: 0, dy: -1, axis: "z" as const, sign: -1 as const }, // north
             { dx: 0, dy: 1, axis: "z" as const, sign: 1 as const }, // south
@@ -1242,21 +1405,9 @@ class ThreeRenderer implements RendererInterface {
             if (inBounds(nx, ny)) {
               const nCell = state.map[idx(nx, ny)] as any;
               const nt = nCell ? (nCell.upg ? nCell.upg.to : nCell.type) : null;
-              
-              // For animation, also consider animated neighbor heights
-              let neighborCurrentHeight = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
-              if (this.isAnimating && nt !== T.WATER) {
-                const neighborKey = `${nx},${ny}`;
-                const neighborAnimData = this.tileAnimationData.get(neighborKey);
-                if (neighborAnimData) {
-                  neighborCurrentHeight = neighborAnimData.currentHeight;
-                } else if ((nCell?.h || 0) > 0) {
-                  neighborCurrentHeight = 0; // Not animated yet
-                }
-              }
-              nH = neighborCurrentHeight;
+              nH = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
             }
-            const diff = currentHeight - nH;
+            const diff = heightLevel - nH;
             if (diff <= 0) continue;
 
             const hWorld = diff * ThreeRenderer.HEIGHT_PER_LEVEL;
