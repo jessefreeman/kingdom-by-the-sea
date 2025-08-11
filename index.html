@@ -51,20 +51,8 @@
     </main>
   </div>
 
-  <script>
-    const timestamp = new Date().getTime();
-    const scripts = [
-      `/js/game.js?v=${timestamp}`,
-      `/js/game.tests.js?v=${timestamp}`
-    ];
-    scripts.forEach(src => {
-      const script = document.createElement('script');
-      script.src = src;
-      document.body.appendChild(script);
-    });
-  // Tip: you can try the renderer API in the console after load:
-  // KBTS.getRenderer() => 'debug'
-  // KBTS.setRenderer('three') // currently a stub that falls back to debug draw
-  </script>
+  <script src="/js/renderer.js?v=dev"></script>
+  <script src="/js/game.js?v=dev"></script>
+  <script src="/js/game.tests.js?v=dev"></script>
 </body>
 </html>
