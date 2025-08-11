@@ -43,7 +43,7 @@ class ThreeRenderer implements RendererInterface {
   private mouseDownTime = 0;
   private mouseDownPosition = { x: 0, y: 0 };
   private cameraTarget = { x: 0, y: 0, z: 0 };
-  private cameraDistance = 15;
+  private cameraDistance = 25; // Increased for perspective camera
   private cameraAngleX = 0.74; // 42.4° - isometric view angle
   private cameraAngleY = 0.84; // 48.1° - isometric rotation
   private animationFrameId: number | null = null;
@@ -76,13 +76,14 @@ class ThreeRenderer implements RendererInterface {
       const containerWidth = this.container.clientWidth;
       const containerHeight = this.container.clientHeight;
       
-      // Camera setup - orthographic for flat view
+      // Camera setup - perspective for natural depth perception
       const aspect = containerWidth / containerHeight;
-      const size = 10;
-      this.camera = new THREE.OrthographicCamera(
-        -size * aspect, size * aspect,
-        size, -size,
-        0.01, 200  // Much closer near plane and further far plane to prevent clipping
+      const fov = 60; // Field of view in degrees - good for isometric-style view
+      this.camera = new THREE.PerspectiveCamera(
+        fov,
+        aspect,
+        0.1,   // Near clipping plane
+        1000   // Far clipping plane
       );
 
       // Renderer setup
@@ -867,12 +868,9 @@ class ThreeRenderer implements RendererInterface {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     const aspect = width / height;
-    const size = 10;
 
-    this.camera.left = -size * aspect;
-    this.camera.right = size * aspect;
-    this.camera.top = size;
-    this.camera.bottom = -size;
+    // Update perspective camera aspect ratio
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
