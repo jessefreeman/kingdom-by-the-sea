@@ -1482,7 +1482,18 @@ function computeHeightMap() {
       const c = state.map[i] as any;
       if (!c || rt(c) !== T.MOUNTAIN) continue;
       const d = mDepth[i] >= 0 ? mDepth[i] : 0;
-      heights[i] = 3 + d;
+      // Base mountain height
+      let hBase = 3 + d;
+      // Count adjacent mountains in 8 directions
+      let adjM = 0;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx, ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const nc = state.map[I(nx, ny)] as any;
+        if (nc && rt(nc) === T.MOUNTAIN) adjM++;
+      }
+      // Double mountains to ensure they stand above surroundings, and add neighbor bonus
+      heights[i] = Math.max(6, hBase * 2) + adjM;
     }
 
   // Step 2: for each mountain tile, increase all surrounding tiles (8-dir)
@@ -1581,6 +1592,29 @@ function computeHeightMap() {
         }
       }
   }
+
+  // Final enforcement: mountains strictly above surrounding non-mountain tiles and baseline >= 3
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c || rt(c) !== T.MOUNTAIN) continue;
+      let maxNeighbor = -Infinity;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx,
+          ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const ni = I(nx, ny);
+        const nc = state.map[ni] as any;
+        if (!nc) continue;
+        const nt = rt(nc);
+        if (nt === T.MOUNTAIN) continue;
+        maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
+      }
+      const base = 3;
+      const req = maxNeighbor > -Infinity ? (maxNeighbor | 0) + 1 : base;
+      if ((heights[i] | 0) < req) heights[i] = Math.max(base, req);
+    }
 
   // Assign back to cells (water stays 0, land at least 1)
   for (let y = 0; y < H; y++)
