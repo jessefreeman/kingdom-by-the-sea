@@ -624,8 +624,13 @@ function draw() {
 // ===== Input =====
 const canvasClick = (e: MouseEvent) => {
   const r = canvas.getBoundingClientRect();
-  const x = Math.floor((e.clientX - r.left) / state.size.t),
-    y = Math.floor((e.clientY - r.top) / state.size.t);
+  // Convert client pixels -> canvas pixels to handle CSS scaling
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  const cx = (e.clientX - r.left) * scaleX;
+  const cy = (e.clientY - r.top) * scaleY;
+  const x = Math.floor(cx / state.size.t);
+  const y = Math.floor(cy / state.size.t);
   if (!inBounds(x, y)) return;
   state.sel = idx(x, y);
   draw();
