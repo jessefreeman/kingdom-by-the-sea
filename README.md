@@ -22,3 +22,26 @@ Roadmap (three)
 - materials: toon/lambert with pixelated texture effect; color palette mapping to `C`
 - interaction: raycast to select tile; dispatch back to KBTS to open panel
 - perf: instancing + frustum culling; reuse meshes on resize
+
+---
+
+## TypeScript migration and live dev
+
+We are migrating to TypeScript with Vite for live reload.
+
+How to run:
+
+```sh
+npm install
+npm run dev
+```
+
+What’s new:
+- Added `tsconfig.json` and `vite` dev server.
+- New `src/` folder with `types.ts`, `renderer.ts`, `game.ts`, `main.ts`.
+- `index.html` now includes a `<script type="module" src="/src/main.ts">` while legacy `/js/*.js` remain for compatibility during migration.
+
+Next steps:
+- Move core helpers and state from `js/game.js` to `src/state.ts`.
+- Move world gen to `src/world.ts`, rules/endTurn to `src/rules.ts`, UI/HUD to `src/ui.ts`.
+- Replace global `window.KBTS` usages gradually with typed imports; keep a thin compatibility layer until tests are ported.

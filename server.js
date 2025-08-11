@@ -3,7 +3,17 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const chokidar = require('chokidar');
-const port = process.env.PORT || 8080;
+function pickPort() {
+  const envPort = process.env.PORT;
+  if (envPort && !Number.isNaN(Number(envPort))) return Number(envPort);
+  const portsList = process.env.PORTS;
+  if (portsList) {
+    const first = String(portsList).split(',')[0];
+    if (first && !Number.isNaN(Number(first))) return Number(first);
+  }
+  return 8080;
+}
+const port = pickPort();
 
 const getContentType = (filePath) => {
   const ext = path.extname(filePath).toLowerCase();
