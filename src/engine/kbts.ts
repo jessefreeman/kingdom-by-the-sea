@@ -358,6 +358,8 @@ async function generate(
   });
   // Compute initial heights based on terrain
   computeHeightMap();
+  // Deterministically set seed from current land/water layout
+  recomputeSeedFromMap();
 
   // Load tile atlas for enhanced rendering - wait for it to load
   try {
@@ -1491,7 +1493,8 @@ function computeHeightMap() {
   // Assign back to cells (water stays 0)
   each((x, y, c: any) => {
     const i = idx(x, y);
-    c.h = rt(c) === T.WATER ? 0 : heights[i];
+    // Normalize: all land sits at least 1 above water
+    c.h = rt(c) === T.WATER ? 0 : Math.max(1, heights[i] | 0);
   });
 }
 
@@ -1500,6 +1503,143 @@ function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
   const x = i % state.size.w,
     y = Math.floor(i / state.size.w);
   adjustHeightAt(x, y, delta, propagate);
+}
+
+// Bump the random seed when land is created/removed to reflect terrain changes
+function bumpSeed(
+  reason: "land-created" | "land-removed",
+  x: number,
+  y: number
+) {
+  // Mix old seed with position and reason salts, keep as uint32
+  const salt =
+    ((x + 1) * 73856093) ^
+    ((y + 1) * 19349663) ^
+    (reason === "land-created" ? 0x9e3779b9 : 0x85ebca6b);
+  let s = (state.seed >>> 0) ^ (salt >>> 0);
+  s = Math.imul(s ^ (s >>> 15), s | 1) >>> 0;
+  s = (s + 0x6d2b79f5) >>> 0;
+  state.seed = s >>> 0;
+  state.rng = rng32(state.seed);
+  const so = document.getElementById("seedOut");
+  if (so) so.textContent = String(state.seed);
+}
+
+// Deterministically recompute seed from full map state (tile types, upgrades, workers, flags, height)
+function recomputeSeedFromMap() {
+  // FNV-1a 32-bit style mixing over width, height, and full per-tile state
+  let h = 0x811c9dc5 >>> 0; // 2166136261
+  const mix = (v: number) => {
+    h ^= v >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0; // 16777619
+  };
+  mix(state.size.w | 0);
+  mix(state.size.h | 0);
+  for (let y = 0; y < state.size.h; y++) {
+    for (let x = 0; x < state.size.w; x++) {
+      const c = state.map[idx(x, y)] as any;
+      // Base tile code: map string types to small integers
+      const t = rt(c);
+      let code = 0;
+      switch (t) {
+        case T.WATER: code = 0; break;
+        case T.GRASS: code = 1; break;
+        case T.FOREST: code = 2; break;
+        case T.HILL: code = 3; break;
+        case T.MOUNTAIN: code = 4; break;
+        case T.FARM: code = 5; break;
+        case T.MINE: code = 6; break;
+        case T.HUT: code = 7; break;
+        case T.HOUSE: code = 8; break;
+        case T.MANSION: code = 9; break;
+        case T.PALACE: code = 10; break;
+        case T.CASTLE: code = 11; break;
+        case T.BURNT: code = 12; break;
+        case T.RUBBLE: code = 13; break;
+        case T.DOCK: code = 14; break;
+        case T.TOWN: code = 15; break;
+        default: code = 31; break;
+      }
+      mix(code);
+      // Include height (clamped small int)
+      mix((c.h | 0) & 0xff);
+      // Include discovery flag
+      mix(c.disc ? 1 : 0);
+      // Include farm synergy/workers if present
+      mix((c.wrk | 0) & 0xff);
+      mix((c.fx | 0) & 0xff);
+      // Include upgrade-in-progress details if any
+      if (c.upg) {
+        // encode target tile type of upgrade
+        const to = c.upg.to;
+        let toCode = 0;
+        switch (to) {
+          case T.WATER: toCode = 0; break;
+          case T.GRASS: toCode = 1; break;
+          case T.FOREST: toCode = 2; break;
+          case T.HILL: toCode = 3; break;
+          case T.MOUNTAIN: toCode = 4; break;
+          case T.FARM: toCode = 5; break;
+          case T.MINE: toCode = 6; break;
+          case T.HUT: toCode = 7; break;
+          case T.HOUSE: toCode = 8; break;
+          case T.MANSION: toCode = 9; break;
+          case T.PALACE: toCode = 10; break;
+          case T.CASTLE: toCode = 11; break;
+          case T.BURNT: toCode = 12; break;
+          case T.RUBBLE: toCode = 13; break;
+          case T.DOCK: toCode = 14; break;
+          case T.TOWN: toCode = 15; break;
+          default: toCode = 31; break;
+        }
+        mix(0x9 as number);
+        mix(toCode);
+        mix((c.upg.left | 0) & 0xff);
+        mix((c.upg.total | 0) & 0xff);
+        mix((c.upg.prog | 0) & 0xff);
+      } else {
+        mix(0x0);
+      }
+    }
+  }
+  // Final avalanche to improve bit diffusion
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  state.seed = h >>> 0;
+  state.rng = rng32(state.seed);
+  const so = document.getElementById("seedOut");
+  if (so) so.textContent = String(state.seed);
+}
+
+// Apply a height value and convert between water and land at thresholds
+function applyHeightAndMaybeConvert(x: number, y: number, newH: number) {
+  const i = idx(x, y);
+  const c = state.map[i] as any;
+  if (!c) return;
+  const t = rt(c);
+  if (t === T.WATER) {
+    if (newH >= 1) {
+      // Water becomes land (grass) at height >= 1
+      c.type = T.GRASS;
+      c.upg = null;
+      c.h = Math.max(1, newH | 0);
+    } else {
+      c.h = 0;
+    }
+  } else {
+    if (newH <= 0) {
+      // Land removed becomes water at height 0
+      c.type = T.WATER;
+      c.upg = null;
+      c.h = 0;
+    } else {
+      // Land remains, enforce baseline of 1
+      c.h = Math.max(1, newH | 0);
+    }
+  }
 }
 
 function adjustHeightAt(
@@ -1512,11 +1652,8 @@ function adjustHeightAt(
   const c = state.map[idx(x, y)] as any;
   if (!c) return;
   const was = c.h | 0;
-  const t = rt(c);
-  const minH = t === T.WATER ? 0 : 0; // water pinned to 0 via override below
-  c.h = Math.max(minH, was + delta);
-  // Keep water flat
-  if (t === T.WATER) c.h = 0;
+  const newH = was + delta;
+  applyHeightAndMaybeConvert(x, y, newH);
   if (propagate) {
     for (const d of DIRS) {
       const nx = x + d[0],
@@ -1524,16 +1661,14 @@ function adjustHeightAt(
       if (!inBounds(nx, ny)) continue;
       const n = state.map[idx(nx, ny)] as any;
       if (!n) continue;
-      const nt = rt(n);
-      if (nt === T.WATER) {
-        n.h = 0;
-        continue;
-      }
-      n.h = Math.max(0, (n.h | 0) + delta);
+      const nNew = (n.h | 0) + delta;
+      applyHeightAndMaybeConvert(nx, ny, nNew);
     }
     // After manual edit, optionally smooth descent toward water
     smoothHeightsAround(x, y);
   }
+  // Recompute seed deterministically from land/water layout
+  recomputeSeedFromMap();
   draw();
 }
 
