@@ -54,6 +54,7 @@ class ThreeRenderer implements RendererInterface {
   private debugMode = true; // Enable debug mode
   private debugElement: HTMLElement | null = null;
   public inited = false;
+  private static readonly HEIGHT_PER_LEVEL = 1; // 1 world unit per height level
 
   async init() {
     const K = (window as any).KBTS;
@@ -977,7 +978,7 @@ class ThreeRenderer implements RendererInterface {
         // Create texture
         const texture = this.createTileTexture(t || T.WATER, isCoast, cell.disc, isSelected, label, hasSynergy);
         
-        // Create mesh
+  // Create mesh
         const geometry = new THREE.PlaneGeometry(1, 1);
         const material = new THREE.MeshBasicMaterial({ map: texture });
         const mesh = new THREE.Mesh(geometry, material);
@@ -985,7 +986,11 @@ class ThreeRenderer implements RendererInterface {
         // Position mesh on the ground (XZ plane at Y=0)
         // Rotate the plane to lie flat on the ground
         mesh.rotation.x = -Math.PI / 2; // Rotate 90 degrees to be horizontal
-        mesh.position.set(x - state.size.w/2 + 0.5, 0, (y - state.size.h/2 + 0.5));
+  const heightLevel = (state.map[idx(x, y)] as any)?.h | 0;
+  const yPos = Math.max(0, heightLevel) * ThreeRenderer.HEIGHT_PER_LEVEL;
+  // Water is always flat at 0
+  const isWater = t === T.WATER;
+  mesh.position.set(x - state.size.w/2 + 0.5, isWater ? 0 : yPos, (y - state.size.h/2 + 0.5));
         
         this.scene.add(mesh);
         this.tileMeshes.push(mesh);

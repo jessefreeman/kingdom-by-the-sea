@@ -28,7 +28,7 @@ const rt = (c: any)=> c ? (c.upg ? c.upg.to : c.type) : null;
 const ov = (html:string, hook?: (box:HTMLElement, wrap:HTMLElement)=>void) => { const w=document.createElement('div'); w.className='overlay'; Object.assign(w.style,{position:'absolute',inset:'0',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.55)',zIndex:'1000'} as CSSStyleDeclaration); w.innerHTML = `<div class="card">${html}</div>`; document.body.appendChild(w); if(hook) hook(w.querySelector('.card') as HTMLElement,w); return w; };
 
 // ===== Helpers =====
-const cell = (t: string): Cell => ({ type: t as any, disc:false, upg:null, wrk:0, fx:0 });
+const cell = (t: string): Cell => ({ type: t as any, disc:false, upg:null, wrk:0, fx:0, h:0 });
 function houseNearby(x:number,y:number){ for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){ if(!dx && !dy)continue; const nx=x+dx, ny=y+dy; if(!inBounds(nx,ny))continue; const t=rt(state.map[idx(nx,ny)]); if(t && HOUSELINE.includes(t)) return true } return false }
 function noHouseNearby(x:number,y:number){ return !houseNearby(x,y); }
 
@@ -69,6 +69,8 @@ async function generate(seed = Date.now(), size: 'small'|'medium'|'large'='mediu
   const s = gs.sort((a,b)=>Math.hypot(a.x-cx,a.y-cy)-Math.hypot(b.x-cx,b.y-cy))[0] || {x:Math.floor(cx), y:Math.floor(cy)};
   (state.map[idx(s.x,s.y)] as any).type=T.HUT; ensureStartResources(s.x,s.y); reveal(s.x,s.y,1);
   let towns=0; each((x,y,c:any)=>{ if(towns<2 && (c.type===T.GRASS||c.type===T.FOREST) && (x+y)%7===0 && (rand())<0.25){ c.type=T.TOWN; towns++; } });
+  // Compute initial heights based on terrain
+  computeHeightMap();
   
   // Load tile atlas for enhanced rendering - wait for it to load
   try {
@@ -107,6 +109,7 @@ function tile(x:number,y:number,c:any){
   const ts=state.size.t,px=x*ts,py=y*ts;
   if(!c){ ctx.fillStyle='#0b0f22'; ctx.fillRect(px,py,ts,ts); return; }
   const t=rt(c);
+  const h = (c.h|0); // height levels; 1 level = 16px in 3D, but here we fake shadow/offset
   
   // Try to use tile atlas if available
   const atlas = tileAtlasModule?.tileAtlas;
@@ -185,7 +188,15 @@ function tile(x:number,y:number,c:any){
     const fill = (t && (C as any)[t]) || '#333';
     ctx.fillStyle = fill as string;
   }
+  // Vertical offset for debug 2D: draw higher tiles slightly lighter border and small top offset
   ctx.fillRect(px,py,ts,ts);
+  if(h>0){
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(px, py, ts, 2);
+    ctx.restore();
+  }
   if(!c.disc){
   ctx.fillStyle=C.fog || '#0a0d1a';
     ctx.globalAlpha=.75; ctx.fillRect(px,py,ts,ts); ctx.globalAlpha=1;
@@ -205,6 +216,12 @@ function draw(){ const RN=(window as any).KBTS_Renderer; if(RN?.draw){ RN.draw()
 // ===== Input =====
 const canvasClick = (e: MouseEvent) => { const r=canvas.getBoundingClientRect(); const x=Math.floor((e.clientX-r.left)/state.size.t), y=Math.floor((e.clientY-r.top)/state.size.t); if(!inBounds(x,y)) return; state.sel=idx(x,y); draw(); openPanel(x,y); };
 canvas.addEventListener('click', canvasClick);
+// Debug height controls: +/- to raise/lower selected tile and propagate to neighbors
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  if(state.sel==null) return;
+  if(e.key==='+'|| e.key==='='){ adjustHeightByIndex(state.sel, +1, true); e.preventDefault(); }
+  if(e.key==='-'|| e.key==='_'){ adjustHeightByIndex(state.sel, -1, true); e.preventDefault(); }
+});
 
 // ===== Rules / UI =====
 const afford = (c:any)=> (!('G' in c)||state.gold>=c.G) && (!('W' in c)||state.wood>=c.W) && (!('P' in c)||state.people>=c.P) && (!('F' in c)||state.food>=c.F);
@@ -291,6 +308,74 @@ showStart();
   updateFarmSynergy, endTurn, randomEvent, summary, countType, afford, whyNo,
   showStart, start: async (size?: any)=> await generate(undefined as any, size), tileInfo,
   openPanel,
+  // Height debug helpers
+  computeHeightMap, adjustHeightByIndex,
   setRenderer: (name: string)=>{ const RN=(window as any).KBTS_Renderer; RN?.set?.(name); },
   getRenderer: ()=>{ const RN=(window as any).KBTS_Renderer; return RN?.get?.()||'debug'; },
 };
+
+// ===== Height System =====
+// Rules:
+// - Water is height 0 flat
+// - Mountains are level 2, immediate neighbors level 1 (if land)
+// - In a connected mountain range, the center grows: assign higher based on surrounding mountains
+// - Heights descend by 1 per ring back to water
+function computeHeightMap(){
+  const W=state.size.w,H=state.size.h;
+  const heights = new Array(W*H).fill(0);
+  // Seed mountains
+  each((x,y,c:any)=>{ if(c.type===T.MOUNTAIN){ heights[idx(x,y)]=2; } });
+  // Neighbor raise around mountains
+  each((x,y,c:any)=>{ if(c.type!==T.MOUNTAIN) return; for(const d of DIRS){ const nx=x+d[0],ny=y+d[1]; if(!inBounds(nx,ny)) continue; const ni=idx(nx,ny); const nc=state.map[ni] as any; if(nc && rt(nc)!==T.WATER) heights[ni] = Math.max(heights[ni], 1); } });
+  // Mountain ranges: BFS over connected mountains, raise inner tiles
+  const seen = new Array(W*H).fill(false);
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    const i=idx(x,y); if(seen[i]) continue; const c=state.map[i] as any; if(!c || c.type!==T.MOUNTAIN) continue;
+    // Collect component
+    const comp: Array<[number,number]> = [];
+    const q: Array<[number,number]> = [[x,y]]; seen[i]=true;
+    while(q.length){ const [cx,cy]=q.shift()!; comp.push([cx,cy]); for(const d of DIRS){ const nx=cx+d[0],ny=cy+d[1]; if(!inBounds(nx,ny)) continue; const ni=idx(nx,ny); if(seen[ni]) continue; const nc=state.map[ni] as any; if(nc && nc.type===T.MOUNTAIN){ seen[ni]=true; q.push([nx,ny]); } } }
+    if(comp.length>=2){
+      // Determine a "center" as the tile with most mountain neighbors
+      let best:[number,number]=comp[0]!, bestDeg=-1;
+      for(const [cx,cy] of comp){ let deg=0; for(const d of DIRS){ const nx=cx+d[0],ny=cy+d[1]; if(!inBounds(nx,ny)) continue; const nc=state.map[idx(nx,ny)] as any; if(nc && nc.type===T.MOUNTAIN) deg++; } if(deg>bestDeg){ bestDeg=deg; best=[cx,cy]; } }
+      // Raise center proportional to degree (cap at 3 for now)
+      const centerI = idx(best[0],best[1]); heights[centerI] = Math.max(heights[centerI], Math.min(3, 2 + Math.max(0,bestDeg-2)));
+      // Other mountain tiles reduced by 1 toward base 1
+      for(const [mx,my] of comp){ const mi=idx(mx,my); if(mi===centerI) continue; heights[mi] = Math.max(1, heights[mi]-1); }
+    }
+  }
+  // Propagate downward to land, stop at water
+  // Multi-source BFS from non-water tiles with assigned heights
+  const q: Array<[number,number]> = [];
+  each((x,y,c:any)=>{ const i=idx(x,y); if(rt(c)!==T.WATER && heights[i]>0) q.push([x,y]); });
+  while(q.length){ const [cx,cy]=q.shift()!; const ci=idx(cx,cy); for(const d of DIRS){ const nx=cx+d[0],ny=cy+d[1]; if(!inBounds(nx,ny)) continue; const ni=idx(nx,ny); const nc=state.map[ni] as any; if(!nc || rt(nc)===T.WATER) continue; const target = Math.max(0, heights[ci]-1); if(target>heights[ni]){ heights[ni]=target; q.push([nx,ny]); } } }
+  // Assign back to cells (water stays 0)
+  each((x,y,c:any)=>{ const i=idx(x,y); c.h = (rt(c)===T.WATER)?0:heights[i]; });
+}
+
+function adjustHeightByIndex(i:number, delta:number, propagate:boolean){
+  if(i<0||i>=state.map.length) return;
+  const x = i % state.size.w, y = Math.floor(i / state.size.w);
+  adjustHeightAt(x,y,delta,propagate);
+}
+
+function adjustHeightAt(x:number,y:number,delta:number,propagate:boolean){
+  if(!inBounds(x,y)) return; const c=state.map[idx(x,y)] as any; if(!c) return;
+  const was=c.h|0; const t=rt(c); const minH = (t===T.WATER)?0:0; // water pinned to 0 via override below
+  c.h = Math.max(minH, was + delta);
+  // Keep water flat
+  if(t===T.WATER) c.h = 0;
+  if(propagate){ for(const d of DIRS){ const nx=x+d[0],ny=y+d[1]; if(!inBounds(nx,ny)) continue; const n=state.map[idx(nx,ny)] as any; if(!n) continue; const nt=rt(n); if(nt===T.WATER){ n.h=0; continue; } n.h = Math.max(0, (n.h|0) + delta); }
+    // After manual edit, optionally smooth descent toward water
+    smoothHeightsAround(x,y);
+  }
+  draw();
+}
+
+function smoothHeightsAround(cx:number,cy:number){
+  // Simple 2-step relaxation: tiles must not exceed any neighbor by >1, water clamps to 0
+  for(let pass=0; pass<2; pass++){
+    for(const [x,y] of [[cx,cy],[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]] as any){ if(!inBounds(x,y)) continue; const i=idx(x,y); const c=state.map[i] as any; if(!c) continue; if(rt(c)===T.WATER){ c.h=0; continue; } let maxN=0; for(const d of DIRS){ const nx=x+d[0],ny=y+d[1]; if(!inBounds(nx,ny)) continue; const n=state.map[idx(nx,ny)] as any; if(!n) continue; maxN=Math.max(maxN, n.h|0); } if((c.h|0) > maxN+1) c.h = maxN+1; if((c.h|0) < 0) c.h=0; }
+  }
+}

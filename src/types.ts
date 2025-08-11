@@ -12,7 +12,7 @@ export const T: Record<string, TileType> = {
 
 export type Yield = Partial<{ G: number; F: number; W: number; P: number }>;
 export type Size = { w: number; h: number; t: number };
-export type Cell = { type: TileType; disc: boolean; upg: null | Upgrade; wrk?: number; fx?: number };
+export type Cell = { type: TileType; disc: boolean; upg: null | Upgrade; wrk?: number; fx?: number; h?: number };
 export type Upgrade = { to: TileType; left: number; total: number; prog?: number; spec: UpgradeSpec };
 export type UpgradeSpec = {
   to: TileType;
