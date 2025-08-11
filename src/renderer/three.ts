@@ -3,17 +3,17 @@
 //
 // Debug Camera Controls:
 // - Left click: Select tiles
-// - Right click + drag: Rotate camera (respects axis toggles)
+// - Right click + drag: Rotate camera around Y-axis only (X-axis fixed at 29.8°)
 // - Middle click + drag: Pan camera target
 // - Mouse wheel: Zoom in/out
 // - D key: Toggle debug overlay and control buttons (overlay hidden by default)
 // - R key: Reset camera to default position
 // - C key: Center camera on map
 // - P key: Print current values to console
-// - 1,2,3 keys: Toggle X, Y, Z axis rotation
-// - WASD: Fine angle adjustment
+// - 1,2,3 keys: Toggle X, Y, Z axis rotation (X-axis now disabled)
+// - WASD: W/S zoom in/out, A/D rotate left/right
 // - Q/E: Distance adjustment
-// - Arrow keys: Precise angle adjustment
+// - Arrow keys: Up/Down zoom, Left/Right rotate
 // - +/- keys: Zoom in/out (disabled; reserved for height debug)
 
 import { tileAtlas } from "../tileAtlas";
@@ -47,7 +47,7 @@ class ThreeRenderer implements RendererInterface {
   private mouseDownPosition = { x: 0, y: 0 };
   private cameraTarget = { x: 0, y: 0, z: 0 };
   private cameraDistance = 25; // Increased for perspective camera
-  private cameraAngleX = 0.74; // 42.4° - isometric view angle
+  private cameraAngleX = 0.520; // Fixed at 29.8° - no longer adjustable
   private cameraAngleY = 0.84; // 48.1° - isometric rotation
   private animationFrameId: number | null = null;
   private needsRender = false;
@@ -453,12 +453,9 @@ class ThreeRenderer implements RendererInterface {
     const deltaY = e.clientY - this.lastMousePosition.y;
 
     if (this.isRotating) {
-      // Isometric-style rotation: primarily around Y-axis with limited tilt
-      this.cameraAngleY -= deltaX * 0.01; // Horizontal rotation around map (primary control)
-      this.cameraAngleX += deltaY * 0.005; // Limited tilt adjustment (slower)
-
-      // Constrain X angle to maintain isometric feel (30-60 degrees)
-      this.cameraAngleX = Math.max(0.52, Math.min(1.05, this.cameraAngleX)); // ~30-60°
+      // Y-axis rotation only: horizontal rotation around map
+      this.cameraAngleY -= deltaX * 0.01; // Horizontal rotation around map
+      // X-axis is now fixed - no tilt adjustment allowed
 
       this.updateCameraPosition();
     } else if (this.isDragging) {
@@ -724,14 +721,10 @@ class ThreeRenderer implements RendererInterface {
     }
 
     if (angleX) {
-      angleX.addEventListener("change", () => {
-        this.cameraAngleX = parseFloat(angleX.value) || 0;
-        this.updateCameraPosition();
-      });
-      angleX.addEventListener("input", () => {
-        this.cameraAngleX = parseFloat(angleX.value) || 0;
-        this.updateCameraPosition();
-      });
+      // X angle is now fixed - disable the slider
+      angleX.disabled = true;
+      angleX.value = "0.520";
+      angleX.title = "X angle is fixed at 0.520 (29.8°)";
     }
 
     if (angleY) {
@@ -820,7 +813,7 @@ class ThreeRenderer implements RendererInterface {
     if (e.key === "r" || e.key === "R") {
       this.cameraTarget = { x: 0, y: 0, z: 0 };
       this.cameraDistance = 20;
-      this.cameraAngleX = 0.1; // Almost top-down (5.7°)
+      this.cameraAngleX = 0.520; // Fixed at 29.8° - no longer adjustable
       this.cameraAngleY = -1.43; // -81.9° rotation
       this.camera.zoom = 1;
       this.camera.updateProjectionMatrix();
@@ -828,14 +821,14 @@ class ThreeRenderer implements RendererInterface {
       e.preventDefault();
     }
 
-    // Fine control with WASD keys
+    // Fine control with WASD keys - W/S now control zoom instead of X angle
     if (e.key === "w" || e.key === "W") {
-      this.cameraAngleX -= 0.05;
+      this.cameraDistance = Math.max(5, this.cameraDistance - 2);
       this.updateCameraPosition();
       e.preventDefault();
     }
     if (e.key === "s" || e.key === "S") {
-      this.cameraAngleX += 0.05;
+      this.cameraDistance = Math.min(50, this.cameraDistance + 2);
       this.updateCameraPosition();
       e.preventDefault();
     }
@@ -878,13 +871,13 @@ class ThreeRenderer implements RendererInterface {
     }
 
     if (e.key === "ArrowUp") {
-      this.cameraAngleX -= 0.05;
+      this.cameraDistance = Math.max(5, this.cameraDistance - 2);
       this.updateCameraPosition();
       e.preventDefault();
     }
 
     if (e.key === "ArrowDown") {
-      this.cameraAngleX += 0.05;
+      this.cameraDistance = Math.min(50, this.cameraDistance + 2);
       this.updateCameraPosition();
       e.preventDefault();
     }
@@ -969,7 +962,7 @@ class ThreeRenderer implements RendererInterface {
 
     this.cameraTarget = { x: 0, y: 0, z: 0 };
     this.cameraDistance = 20;
-    this.cameraAngleX = Math.PI * 0.35; // Fixed isometric angle
+    this.cameraAngleX = 0.520; // Fixed at 29.8°
     this.cameraAngleY = Math.PI * 0.25; // Default 45 degree side angle
     this.camera.zoom = 1;
     this.camera.updateProjectionMatrix();
