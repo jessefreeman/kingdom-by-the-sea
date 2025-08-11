@@ -1103,9 +1103,24 @@ class ThreeRenderer implements RendererInterface {
               sideTex.wrapT = THREE.RepeatWrapping;
               sideTex.repeat.set(1, diff);
             }
+            // Basic flat shading: tint sides by orientation and height to improve depth readability
+            // North (negative Z) darkest, West (negative X) darker, South lighter, East lightest
+            const baseShade =
+              d.axis === "z"
+                ? d.sign < 0
+                  ? 0.6 // north
+                  : 0.8 // south
+                : d.sign < 0
+                ? 0.7 // west
+                : 0.9; // east
+            // Slightly darken more for taller cliffs
+            const heightShade = Math.max(0.6, 1 - (diff - 1) * 0.08);
+            const shade = Math.max(0.4, Math.min(1, baseShade * heightShade));
+
             const sideMat = new THREE.MeshBasicMaterial({
               map: sideTex || undefined,
               side: THREE.DoubleSide,
+              color: new THREE.Color(shade, shade, shade),
             });
             const sideGeom = new THREE.PlaneGeometry(1, hWorld);
             const side = new THREE.Mesh(sideGeom, sideMat);
