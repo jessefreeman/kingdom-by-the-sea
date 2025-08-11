@@ -418,6 +418,7 @@ class ThreeRenderer implements RendererInterface {
   private addVisualizationHelpers() {
     if (!this.scene) return;
     const THREE = window.THREE;
+    const K = (window as any).KBTS;
 
     // Add axis helper to show X, Y, Z directions
     const axisHelper = new THREE.AxesHelper(10);
@@ -428,20 +429,27 @@ class ThreeRenderer implements RendererInterface {
     gridHelper.position.y = 0; // Place at ground level (Y=0)
     this.scene.add(gridHelper);
 
-    // Add a large transparent ground plane to catch shadows/show depth
-    const groundGeometry = new THREE.PlaneGeometry(50, 50);
-    const groundMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0x001122, 
-      transparent: true, 
-      opacity: 0.3,
+    // Add a large ocean plane that extends far beyond the map
+    const oceanSize = 200; // Much larger than the map to create ocean horizon
+    const oceanGeometry = new THREE.PlaneGeometry(oceanSize, oceanSize);
+    
+    // Get the deep water color from the game constants - same logic as tile creation
+    let deepWaterColor = '#0c3b66'; // fallback
+    if (K?.C && K?.T) {
+      deepWaterColor = K.C[K.T.WATER] || '#0c3b66';
+    }
+    
+    const oceanMaterial = new THREE.MeshBasicMaterial({ 
+      color: new THREE.Color(deepWaterColor),
       side: THREE.DoubleSide 
     });
-    const groundPlane = new THREE.Mesh(groundGeometry, groundMaterial);
-    groundPlane.rotation.x = -Math.PI / 2; // Rotate to be horizontal (XZ plane)
-    groundPlane.position.y = -0.1; // Slightly below Y=0 to avoid z-fighting
-    this.scene.add(groundPlane);
+    
+    const oceanPlane = new THREE.Mesh(oceanGeometry, oceanMaterial);
+    oceanPlane.rotation.x = -Math.PI / 2; // Rotate to be horizontal (XZ plane)
+    oceanPlane.position.y = -0.2; // Slightly below the tiles to avoid z-fighting
+    this.scene.add(oceanPlane);
 
-    console.log('Added visualization helpers: axis helper, grid, and ground plane');
+    console.log('Added visualization helpers: axis helper, grid, and ocean plane');
   }
 
   private updateDebugInfo() {
