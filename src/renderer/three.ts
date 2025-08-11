@@ -16,6 +16,8 @@
 // - Arrow keys: Precise angle adjustment
 // - +/- keys: Zoom in/out
 
+import { tileAtlas } from '../tileAtlas';
+
 // Declare global THREE from CDN
 declare global {
   interface Window {
@@ -61,6 +63,9 @@ class ThreeRenderer implements RendererInterface {
       if (!window.THREE) {
         await this.loadThreeJS();
       }
+
+      // Load tile atlas
+      await tileAtlas.load();
 
       const THREE = window.THREE;
 
@@ -170,8 +175,64 @@ class ThreeRenderer implements RendererInterface {
     const { T, C, LABEL } = K;
     const THREE = window.THREE;
     
+    // Determine the actual tile type for atlas lookup
+    let atlasType = tileType;
+    if (tileType === T.WATER) {
+      atlasType = isCoast ? 'coast' : 'water';
+    }
+    
+    // Try to get texture from atlas first
+    if (tileAtlas.isLoaded()) {
+      const useLetters = true; // Use letter layer during development
+      const useFog = !isDiscovered;
+      
+      const texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+      if (texture) {
+        // If we have atlas texture, we might still need to add overlays
+        if (isSelected || hasSynergy) {
+          // Create a composite texture for overlays
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 16;
+          const ctx = canvas.getContext('2d')!;
+          
+          // Draw the base tile
+          const baseCanvas = tileAtlas.getTileCanvas(atlasType, useLetters, useFog);
+          if (baseCanvas) {
+            ctx.drawImage(baseCanvas, 0, 0);
+          }
+          
+          // Add selection border
+          if (isSelected) {
+            ctx.strokeStyle = '#7bdff6';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(0, 0, 16, 16);
+          }
+          
+          // Add synergy indicator
+          if (hasSynergy && isDiscovered) {
+            ctx.save();
+            ctx.font = 'bold 8px ui-monospace, Menlo';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#fff';
+            ctx.globalAlpha = 0.9;
+            ctx.fillText('+', 14, 1);
+            ctx.restore();
+          }
+          
+          const compositeTexture = new THREE.CanvasTexture(canvas);
+          compositeTexture.magFilter = THREE.NearestFilter;
+          compositeTexture.minFilter = THREE.NearestFilter;
+          return compositeTexture;
+        }
+        
+        return texture;
+      }
+    }
+    
+    // Fallback to procedural generation if atlas not available
     const canvas = document.createElement('canvas');
-    const size = 64; // Higher res than the original 24px
+    const size = 16; // Use 16x16 to match atlas
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d')!;
 
@@ -196,15 +257,15 @@ class ThreeRenderer implements RendererInterface {
     // Selection border
     if (isSelected) {
       ctx.strokeStyle = '#7bdff6';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(2, 2, size - 4, size - 4);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0, 0, size, size);
     }
 
     // Label
     if (label && isDiscovered) {
       ctx.save();
       ctx.globalAlpha = 0.9;
-      ctx.font = `bold ${Math.floor(size * 0.3)}px ui-monospace, Menlo`;
+      ctx.font = `bold 8px ui-monospace, Menlo`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff';
@@ -215,16 +276,19 @@ class ThreeRenderer implements RendererInterface {
     // Farm synergy indicator
     if (hasSynergy && isDiscovered) {
       ctx.save();
-      ctx.font = `bold ${Math.floor(size * 0.25)}px ui-monospace, Menlo`;
+      ctx.font = `bold 6px ui-monospace, Menlo`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#fff';
       ctx.globalAlpha = 0.9;
-      ctx.fillText('+', size - 4, 4);
+      ctx.fillText('+', size - 1, 1);
       ctx.restore();
     }
 
-    return new THREE.CanvasTexture(canvas);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    return texture;
   }
 
   private handleClick(e: MouseEvent) {

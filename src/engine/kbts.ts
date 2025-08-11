@@ -12,7 +12,7 @@ const rng32 = (a: number) => () => { let t = a += 0x6D2B79F5; t = Math.imul(t ^ 
 const T = { WATER:'water',GRASS:'grass',FOREST:'forest',HILL:'hill',MOUNTAIN:'mountain',HUT:'hut',HOUSE:'house',MANSION:'mansion',PALACE:'palace',CASTLE:'castle',FARM:'farm',MINE:'mine',BURNT:'burnt',RUBBLE:'rubble',DOCK:'dock',TOWN:'town' } as const;
 const HOUSELINE = [T.HUT,T.HOUSE,T.MANSION,T.PALACE,T.CASTLE];
 const C: Record<string,string> = { [T.WATER]:'#0c3b66',coast:'#155d96',[T.GRASS]:'#2e7d32',[T.FOREST]:'#1f5f24',[T.HILL]:'#7c6f4a',[T.MOUNTAIN]:'#5f5750',[T.FARM]:'#c68f39',[T.MINE]:'#8a7f78',[T.HUT]:'#9b5d2e',[T.HOUSE]:'#b97a3f',[T.MANSION]:'#d29a5a',[T.PALACE]:'#e2b874',[T.CASTLE]:'#e5d09a',[T.BURNT]:'#3a2d2d',[T.RUBBLE]:'#4a4a4a',[T.DOCK]:'#2563eb',fog:'#0a0d1a' };
-const LABEL: Record<string,string> = { [T.GRASS]:'G',[T.FOREST]:'F',[T.HILL]:'H',[T.MOUNTAIN]:'Mt',[T.HUT]:'Hu',[T.HOUSE]:'Ho',[T.MANSION]:'Ma',[T.PALACE]:'P',[T.CASTLE]:'C',[T.FARM]:'Fa',[T.MINE]:'Mi',[T.BURNT]:'B',[T.RUBBLE]:'R',[T.DOCK]:'Dk',[T.TOWN]:'T' };
+const LABEL: Record<string,string> = { [T.GRASS]:'G',[T.FOREST]:'T',[T.HILL]:'M',[T.MOUNTAIN]:'M',[T.HUT]:'H',[T.HOUSE]:'H',[T.MANSION]:'H',[T.PALACE]:'H',[T.CASTLE]:'H',[T.FARM]:'F',[T.MINE]:'M',[T.BURNT]:'B',[T.RUBBLE]:'R',[T.DOCK]:'D',[T.TOWN]:'T' };
 const BASE: Record<string, Partial<{G:number;F:number;W:number}>> = { [T.FARM]:{F:2},[T.MINE]:{G:1},[T.HOUSE]:{G:1},[T.MANSION]:{G:2},[T.PALACE]:{G:3},[T.CASTLE]:{G:4},[T.DOCK]:{F:1,G:1} };
 const DIRS: ReadonlyArray<[number,number]> = [[1,0],[-1,0],[0,1],[0,-1]];
 
@@ -54,7 +54,7 @@ const ctx = canvas.getContext('2d')!;
 const resize = ()=>{ canvas.width = state.size.w*state.size.t; canvas.height = state.size.h*state.size.t; try { const RN=(window as any).KBTS_Renderer; RN?.onResize?.(); } catch { /* noop */ } };
 
 // ===== World Generation =====
-function generate(seed = Date.now(), size: 'small'|'medium'|'large'='medium'){
+async function generate(seed = Date.now(), size: 'small'|'medium'|'large'='medium'){
   const sizes: Record<string,{w:number;h:number}> = { small:{w:8,h:6}, medium:{w:10,h:8}, large:{w:12,h:8} };
   Object.assign(state.size, sizes[size]);
   Object.assign(state, { seed, rng: rng32(seed), year:1, gold:3, food:3, wood:2, people:3, actions:3, sel:null });
@@ -69,6 +69,15 @@ function generate(seed = Date.now(), size: 'small'|'medium'|'large'='medium'){
   const s = gs.sort((a,b)=>Math.hypot(a.x-cx,a.y-cy)-Math.hypot(b.x-cx,b.y-cy))[0] || {x:Math.floor(cx), y:Math.floor(cy)};
   (state.map[idx(s.x,s.y)] as any).type=T.HUT; ensureStartResources(s.x,s.y); reveal(s.x,s.y,1);
   let towns=0; each((x,y,c:any)=>{ if(towns<2 && (c.type===T.GRASS||c.type===T.FOREST) && (x+y)%7===0 && (rand())<0.25){ c.type=T.TOWN; towns++; } });
+  
+  // Load tile atlas for enhanced rendering - wait for it to load
+  try {
+    await loadTileAtlas();
+    console.log('Tile atlas loaded successfully');
+  } catch (e) {
+    console.warn('Could not load tile atlas:', e);
+  }
+  
   resize(); hud(); draw(); $('seedOut').textContent=String(state.seed); $('mapOut').textContent=`${state.size.w}×${state.size.h}`;
 }
 function reveal(cx:number,cy:number,r:number){ for(let y=cy-r;y<=cy+r;y++) for(let x=cx-r;x<=cx+r;x++){ if(!inBounds(x,y)) continue; const c=state.map[idx(x,y)] as any; if(c) c.disc = true; } }
@@ -77,10 +86,91 @@ function ensureStartResources(sx:number,sy:number){ const nbs: Array<{i:number;c
 // ===== Rendering (fallback if renderer missing) =====
 const varA = '#7bdff6';
 const label = (c:any)=> !c||c.type===T.WATER ? '' : (c.disc ? (LABEL[c.type] || (c.type.slice(0,2).toUpperCase())) : '?');
+
+// Import tile atlas for debug renderer
+let tileAtlasModule: any = null;
+async function loadTileAtlas() {
+  if (!tileAtlasModule) {
+    try {
+      tileAtlasModule = await import('../tileAtlas');
+      await tileAtlasModule.tileAtlas.load();
+      // Force redraw once atlas is loaded
+      draw();
+    } catch (e) {
+      console.warn('Could not load tile atlas for debug renderer:', e);
+    }
+  }
+  return tileAtlasModule?.tileAtlas;
+}
+
 function tile(x:number,y:number,c:any){
   const ts=state.size.t,px=x*ts,py=y*ts;
   if(!c){ ctx.fillStyle='#0b0f22'; ctx.fillRect(px,py,ts,ts); return; }
   const t=rt(c);
+  
+  // Try to use tile atlas if available
+  const atlas = tileAtlasModule?.tileAtlas;
+  if (atlas && atlas.isLoaded()) {
+    let atlasType = t || T.WATER;
+    let isCoast = false;
+    
+    if (t === T.WATER) {
+      // Check if this is a coastal tile
+      for(const d of DIRS){
+        const nx=x+d[0],ny=y+d[1];
+        if(inBounds(nx,ny)){
+          const n=rt(state.map[idx(nx,ny)]);
+          if(n!==T.WATER){ isCoast=true; break; }
+        }
+      }
+      atlasType = isCoast ? 'coast' : 'water';
+    }
+    
+    const useLetters = true; // Use letter tiles during development
+    const useFog = !c.disc;
+    
+    const tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
+    if (tileCanvas) {
+      // Scale the 16x16 tile to the current tile size
+      ctx.save();
+      ctx.imageSmoothingEnabled = false; // Pixel-perfect scaling
+      ctx.drawImage(tileCanvas, px, py, ts, ts);
+      ctx.restore();
+      
+      // Add overlays
+      if(state.sel===idx(x,y)){
+        ctx.strokeStyle=varA; ctx.lineWidth=2; ctx.strokeRect(px+1,py+1,ts-2,ts-2);
+      }
+      
+      if(c.type===T.FARM && (c.fx|0)===2 && c.disc){ 
+        ctx.save(); 
+        ctx.font=`bold ${Math.max(8,Math.floor(ts*.5))}px ui-monospace,Menlo`; 
+        ctx.textAlign='right'; 
+        ctx.textBaseline='top'; 
+        ctx.fillStyle='#fff'; 
+        ctx.globalAlpha=.9; 
+        ctx.fillText('+',px+ts-3,py+2); 
+        ctx.restore(); 
+      }
+      
+      if(c.upg&&c.upg.total>1){ 
+        ctx.save(); 
+        ctx.fillStyle='#000'; 
+        ctx.globalAlpha=.45; 
+        ctx.fillRect(px+2,py+ts-10,24,8); 
+        ctx.globalAlpha=1; 
+        ctx.fillStyle='#fff'; 
+        ctx.font='bold 9px ui-monospace,Menlo'; 
+        const step=c.upg.prog||0; 
+        ctx.fillText(`${step}/${c.upg.total}`,px+14,py+ts-6); 
+        ctx.restore(); 
+      }
+      
+      return;
+    }
+  }
+  
+  // Fallback to color-based rendering
   if(t===T.WATER){
     let coast=false;
     for(const d of DIRS){
@@ -178,7 +268,7 @@ function hud(){ $('y').textContent=String(state.year); $('g').textContent=String
 const save = ()=> localStorage.setItem('kbts-save', JSON.stringify(state));
 const load = ()=>{ const raw=localStorage.getItem('kbts-save'); if(!raw) return; Object.assign(state, JSON.parse(raw)); state.rng = rng32(state.seed); resize(); hud(); draw(); $('seedOut').textContent=String(state.seed); $('mapOut').textContent=`${state.size.w}×${state.size.h}`; };
 function clearOverlays(){ document.querySelectorAll('.overlay').forEach(el=>el.remove()); $('panel').innerHTML=''; }
-function showStart(){ clearOverlays(); ov('<div class="title">New Game</div>' + '<div class="section"><label>Map Size' + '<select id="sz">' + '<option value="small">Small (8×6)</option>' + '<option value="medium" selected>Medium (10×8)</option>' + '<option value="large">Large (12×8)</option>' + '</select>' + '</label></div>' + '<div class="section"><label>Seed (optional)' + '<input id="sd" type="number" placeholder="random" style="width:100%" />' + '</label></div>' + '<div style="display:flex;gap:8px;justify-content:flex-end">' + '<button class="btn" id="cancelNew">Cancel</button>' + '<button class="btn primary" id="startNew">Start</button>' + '</div>', (box,wrap)=>{ (box.querySelector('#cancelNew') as HTMLButtonElement).onclick=()=>wrap.remove(); (box.querySelector('#startNew') as HTMLButtonElement).onclick=()=>{ const size=(box.querySelector('#sz') as HTMLSelectElement).value as any; const sd=parseInt((box.querySelector('#sd') as HTMLInputElement).value,10); generate(Number.isFinite(sd)?sd:Date.now(), size); wrap.remove(); }; }); }
+function showStart(){ clearOverlays(); ov('<div class="title">New Game</div>' + '<div class="section"><label>Map Size' + '<select id="sz">' + '<option value="small">Small (8×6)</option>' + '<option value="medium" selected>Medium (10×8)</option>' + '<option value="large">Large (12×8)</option>' + '</select>' + '</label></div>' + '<div class="section"><label>Seed (optional)' + '<input id="sd" type="number" placeholder="random" style="width:100%" />' + '</label></div>' + '<div style="display:flex;gap:8px;justify-content:flex-end">' + '<button class="btn" id="cancelNew">Cancel</button>' + '<button class="btn primary" id="startNew">Start</button>' + '</div>', (box,wrap)=>{ (box.querySelector('#cancelNew') as HTMLButtonElement).onclick=()=>wrap.remove(); (box.querySelector('#startNew') as HTMLButtonElement).onclick=async ()=>{ const size=(box.querySelector('#sz') as HTMLSelectElement).value as any; const sd=parseInt((box.querySelector('#sd') as HTMLInputElement).value,10); await generate(Number.isFinite(sd)?sd:Date.now(), size); wrap.remove(); }; }); }
 
 // Legacy global for compatibility with existing tests calling `showStart()` directly
 (window as any).showStart = showStart;
@@ -199,7 +289,7 @@ showStart();
   canExplore, explore, isCoast, startUpgrade, applyAdjacencyBonuses,
   uniqueAvailable, noHouseNearby, houseNearby, setFarmWorkers, farmWorkers,
   updateFarmSynergy, endTurn, randomEvent, summary, countType, afford, whyNo,
-  showStart, start: (size?: any)=>generate(undefined as any, size), tileInfo,
+  showStart, start: async (size?: any)=> await generate(undefined as any, size), tileInfo,
   openPanel,
   setRenderer: (name: string)=>{ const RN=(window as any).KBTS_Renderer; RN?.set?.(name); },
   getRenderer: ()=>{ const RN=(window as any).KBTS_Renderer; return RN?.get?.()||'debug'; },
