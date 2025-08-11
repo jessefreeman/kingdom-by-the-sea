@@ -168,6 +168,43 @@ function houseNearby(x: number, y: number) {
     }
   return false;
 }
+// ===== Debug Dump =====
+function debugDump() {
+  const W = state.size.w,
+    H = state.size.h;
+  const toId = (t: string | null) => {
+    if (!t) return "??";
+    // short ID from LABEL or first 2 letters
+    return LABEL[t] || t.slice(0, 2).toUpperCase();
+  };
+  const tiles: string[] = [];
+  const heights: string[] = [];
+  for (let y = 0; y < H; y++) {
+    let rowT: string[] = [],
+      rowH: string[] = [];
+    for (let x = 0; x < W; x++) {
+      const c = state.map[idx(x, y)] as any;
+      const t = rt(c);
+      rowT.push(toId(t));
+      rowH.push(String(c?.h | 0));
+    }
+    tiles.push(rowT.join(" "));
+    heights.push(rowH.join(" "));
+  }
+  console.log("KBTS DEBUG DUMP");
+  console.log("seed:", state.seed);
+  console.log("map (ids):");
+  tiles.forEach((r) => console.log(r));
+  console.log("heights:");
+  heights.forEach((r) => console.log(r));
+}
+
+// Bind K to dump
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.key === "k" || e.key === "K") {
+    debugDump();
+  }
+});
 function noHouseNearby(x: number, y: number) {
   return !houseNearby(x, y);
 }
@@ -599,11 +636,12 @@ canvas.addEventListener("click", canvasClick);
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if (state.sel == null) return;
   if (e.key === "+" || e.key === "=") {
-    adjustHeightByIndex(state.sel, +1, true);
+    // Only affect the selected tile (no propagation) for manual testing
+    adjustHeightByIndex(state.sel, +1, false);
     e.preventDefault();
   }
   if (e.key === "-" || e.key === "_") {
-    adjustHeightByIndex(state.sel, -1, true);
+    adjustHeightByIndex(state.sel, -1, false);
     e.preventDefault();
   }
 });
