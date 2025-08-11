@@ -1,66 +1,244 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kingdom By The Sea – Prototype</title>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />
-  <style>
-    :root{--bg:#0f1221;--p:#1b2039;--p2:#12172b;--w:#e5e7eb;--muted:#94a3b8;--a:#7bdff6;--tile:24px;--hud:260px}
-    *{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--w);font-family:ui-monospace,Menlo,Consolas,monospace}
-    #app{display:grid;grid-template-columns:var(--hud) 1fr;height:100%}
-    .hud{background:linear-gradient(180deg,var(--p),var(--p2));border-right:1px solid #263056;padding:12px;display:flex;flex-direction:column;gap:10px}
-    .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
-    .pill{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid #2b3561;border-radius:8px;background:#121631}
-    .btn{border:1px solid #31407b;background:#171c38;color:var(--w);padding:9px 11px;border-radius:10px;cursor:pointer;font-weight:700}
-    .btn[disabled]{opacity:.55;cursor:not-allowed}.btn.primary{background:#25306a;border-color:#3b4aad}
-    .hint{color:var(--muted);font-size:12px}.sep{height:1px;background:#2a355f;margin:6px 0}
-  #stageWrap{position:relative;display:flex;flex-direction:column;height:100%;padding:8px;gap:8px}
-  #threeContainer{flex:1;border:1px solid #273155;border-radius:8px;box-shadow:0 0 0 2px #0d1327 inset;background:#061021;position:relative;overflow:hidden}
-  /* Place 2D debug view as a small overlay in bottom-right */
-  #debugContainer{position:absolute;right:16px;bottom:16px;width:320px;height:220px;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(6,16,33,0.6);backdrop-filter:blur(2px);border:1px solid #273155;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.35)}
-  #gameCanvas{background:#061021;image-rendering:pixelated;border:1px solid #273155;border-radius:6px;box-shadow:0 0 0 2px #0d1327 inset;width:100%;height:100%;display:block}
-    #panel{position:absolute;right:12px;top:12px;width:340px;z-index:100}.card{border:1px solid #2a3561;border-radius:12px;padding:10px;background:#0e1430}
-    .section{border:1px solid #2b3561;padding:8px;border-radius:8px;margin-bottom:8px}.title{font-weight:800;margin-bottom:6px}
-    .overlay{z-index:1000!important}
-  </style>
-</head>
-<body>
-  <div id="app">
-    <aside class="hud">
-      <div class="row" style="grid-template-columns:auto"><div><b>KINGDOM BY THE SEA</b><div class="hint">Coffee-break 4X prototype</div></div></div>
-      <div id="stats">
-        <div class="row"><div>Year</div><div class="pill"><b id="y">1</b></div></div>
-        <div class="row"><div>Gold</div><div class="pill"><b id="g">0</b></div></div>
-        <div class="row"><div>Food</div><div class="pill"><b id="f">0</b></div></div>
-        <div class="row"><div>Wood</div><div class="pill"><b id="w">0</b></div></div>
-        <div class="row"><div>People</div><div class="pill"><b id="p">0</b></div></div>
-        <div class="row"><div>Actions</div><div class="pill"><b id="a">0</b></div></div>
-      </div>
-      <div class="row" style="grid-template-columns:auto"><button class="btn primary" id="end">End Turn</button></div>
-      <div class="sep"></div>
-      <div class="hint">Gold comes from <b>houses</b> & <b>mines</b>.</div>
-      <div class="sep"></div>
-      <div class="row"><div>Seed</div><div class="pill"><b id="seedOut">-</b></div></div>
-      <div class="row"><div>Map</div><div class="pill"><b id="mapOut">-</b></div></div>
-      <div class="sep"></div>
-      <div class="row" style="grid-template-columns:1fr 1fr"><button class="btn" id="save">Save</button><button class="btn" id="load">Load</button></div>
-      <div class="row" style="grid-template-columns:auto"><button class="btn" id="reset">Reset</button></div>
-    </aside>
-    <main id="stageWrap">
-      <div id="threeContainer">
-        <div id="debugContainer">
-          <canvas id="gameCanvas" width="960" height="640"></canvas>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kingdom By The Sea – Prototype</title>
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <style>
+      :root {
+        --bg: #0f1221;
+        --p: #1b2039;
+        --p2: #12172b;
+        --w: #e5e7eb;
+        --muted: #94a3b8;
+        --a: #7bdff6;
+        --tile: 24px;
+        --hud: 260px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--w);
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+      }
+      #app {
+        display: grid;
+        grid-template-columns: var(--hud) 1fr;
+        height: 100%;
+      }
+      .hud {
+        background: linear-gradient(180deg, var(--p), var(--p2));
+        border-right: 1px solid #263056;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 8px;
+        border: 1px solid #2b3561;
+        border-radius: 8px;
+        background: #121631;
+      }
+      .btn {
+        border: 1px solid #31407b;
+        background: #171c38;
+        color: var(--w);
+        padding: 9px 11px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .btn.primary {
+        background: #25306a;
+        border-color: #3b4aad;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sep {
+        height: 1px;
+        background: #2a355f;
+        margin: 6px 0;
+      }
+      #stageWrap {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 8px;
+        gap: 8px;
+      }
+      #threeContainer {
+        flex: 1;
+        border: 1px solid #273155;
+        border-radius: 8px;
+        box-shadow: 0 0 0 2px #0d1327 inset;
+        background: #061021;
+        position: relative;
+        overflow: hidden;
+        /* Ensure a distinct stacking context so z-index works as expected */
+        isolation: isolate;
+      }
+      /* Ensure WebGL canvas stays at the back inside the container */
+      #threeContainer > canvas {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+      }
+      /* Place 2D debug view as a small overlay in bottom-right (fixed, above all) */
+      #debugContainer {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        width: 320px;
+        height: 220px;
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(6, 16, 33, 0.6);
+        backdrop-filter: blur(2px);
+        border: 1px solid #273155;
+        border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      }
+      #gameCanvas {
+        background: #061021;
+        image-rendering: pixelated;
+        border: 1px solid #273155;
+        border-radius: 6px;
+        box-shadow: 0 0 0 2px #0d1327 inset;
+        width: 100%;
+        height: 100%;
+        display: block;
+        position: relative;
+        z-index: 1001;
+      }
+      #panel {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        width: 340px;
+        z-index: 100;
+      }
+      .card {
+        border: 1px solid #2a3561;
+        border-radius: 12px;
+        padding: 10px;
+        background: #0e1430;
+      }
+      .section {
+        border: 1px solid #2b3561;
+        padding: 8px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+      }
+      .title {
+        font-weight: 800;
+        margin-bottom: 6px;
+      }
+      .overlay {
+        z-index: 1000 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="hud">
+        <div class="row" style="grid-template-columns: auto">
+          <div>
+            <b>KINGDOM BY THE SEA</b>
+            <div class="hint">Coffee-break 4X prototype</div>
+          </div>
         </div>
-      </div>
-      <div id="panel"></div>
-    </main>
-  </div>
+        <div id="stats">
+          <div class="row">
+            <div>Year</div>
+            <div class="pill"><b id="y">1</b></div>
+          </div>
+          <div class="row">
+            <div>Gold</div>
+            <div class="pill"><b id="g">0</b></div>
+          </div>
+          <div class="row">
+            <div>Food</div>
+            <div class="pill"><b id="f">0</b></div>
+          </div>
+          <div class="row">
+            <div>Wood</div>
+            <div class="pill"><b id="w">0</b></div>
+          </div>
+          <div class="row">
+            <div>People</div>
+            <div class="pill"><b id="p">0</b></div>
+          </div>
+          <div class="row">
+            <div>Actions</div>
+            <div class="pill"><b id="a">0</b></div>
+          </div>
+        </div>
+        <div class="row" style="grid-template-columns: auto">
+          <button class="btn primary" id="end">End Turn</button>
+        </div>
+        <div class="sep"></div>
+        <div class="hint">Gold comes from <b>houses</b> & <b>mines</b>.</div>
+        <div class="sep"></div>
+        <div class="row">
+          <div>Seed</div>
+          <div class="pill"><b id="seedOut">-</b></div>
+        </div>
+        <div class="row">
+          <div>Map</div>
+          <div class="pill"><b id="mapOut">-</b></div>
+        </div>
+        <div class="sep"></div>
+        <div class="row" style="grid-template-columns: 1fr 1fr">
+          <button class="btn" id="save">Save</button
+          ><button class="btn" id="load">Load</button>
+        </div>
+        <div class="row" style="grid-template-columns: auto">
+          <button class="btn" id="reset">Reset</button>
+        </div>
+      </aside>
+      <main id="stageWrap">
+    <div id="threeContainer"></div>
+        <div id="panel"></div>
+      </main>
+    </div>
 
-  <script type="module" src="/src/main.ts"></script>
-  <!-- TS test harness (browser-run) -->
-  <script type="module" src="/src/tests/game.tests.ts"></script>
-</body>
+    <!-- 2D debug overlay outside of threeContainer to ensure stacking above 3D -->
+    <div id="debugContainer">
+      <canvas id="gameCanvas" width="960" height="640"></canvas>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+    <!-- TS test harness (browser-run) -->
+    <script type="module" src="/src/tests/game.tests.ts"></script>
+  </body>
 </html>
