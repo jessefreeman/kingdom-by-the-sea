@@ -28,24 +28,35 @@ class ThreeRenderer implements Renderer {
   private inited = false;
   async init() {
     const RN = (window as any).KBTS_Renderer as any;
-    if (!RN) return;
-    await RN._impls.three.init();
+    if (!RN) {
+      console.warn('KBTS_Renderer not available, ThreeRenderer init skipped');
+      return;
+    }
+    // The actual three.js renderer initialization is handled by the three.ts module
+    // We just need to set it to use the three renderer
+    if (typeof RN.set === 'function') {
+      RN.set('three');
+    }
     this.inited = true;
   }
   draw() {
     const RN = (window as any).KBTS_Renderer as any;
     if (!RN || !this.inited) return;
-    RN._impls.three.draw();
+    if (typeof RN.draw === 'function') {
+      RN.draw();
+    }
   }
   resize() {
     const RN = (window as any).KBTS_Renderer as any;
     if (!RN || !this.inited) return;
-    RN._impls.three.resize();
+    if (typeof RN.onResize === 'function') {
+      RN.onResize();
+    }
   }
   destroy() {
     const RN = (window as any).KBTS_Renderer as any;
     if (!RN) return;
-    RN._impls.three.destroy();
+    // No specific destroy method needed - the renderer manager handles this
     this.inited = false;
   }
 }

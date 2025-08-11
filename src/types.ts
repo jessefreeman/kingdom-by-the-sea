@@ -100,7 +100,6 @@ export type State = {
   people: number;
   actions: number;
   sel: number | null;
-  riskRng: () => number;
   noEvents?: boolean;
   fogEnabled?: boolean;
 };

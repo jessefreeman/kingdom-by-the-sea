@@ -11,11 +11,16 @@ const esc = (s: any) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-const rng32 = (a: number) => () => {
-  let t = (a += 0x6d2b79f5);
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+const rng32 = (initialSeed: number) => {
+  let seed = initialSeed >>> 0; // Ensure it's a 32-bit unsigned integer
+  return () => {
+    // xorshift32 algorithm - simple and effective PRNG
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    seed = seed >>> 0; // Keep as 32-bit unsigned
+    return seed / 4294967296; // Convert to [0, 1)
+  };
 };
 
 // ===== Constants / Data =====
@@ -112,7 +117,6 @@ const state: State = {
   people: 3,
   actions: 3,
   sel: null,
-  riskRng: Math.random,
   fogEnabled: true,
 };
 const rand = () => (state.rng ? (state.rng as () => number)() : Math.random());
@@ -289,6 +293,29 @@ const resize = () => {
   }
 };
 
+// Store the original seed separately from the working seed
+let originalSeed: number = 0;
+let generationSeed: number = 0;
+
+// RNG stream management for reproducibility
+let worldGenRng: (() => number) | null = null;
+let gameplayRng: (() => number) | null = null;
+let eventRng: (() => number) | null = null;
+
+// Initialize all RNG streams from the base seed
+function initializeRngStreams(baseSeed: number) {
+  originalSeed = baseSeed;
+  generationSeed = baseSeed;
+  
+  // Create separate deterministic streams for different purposes
+  worldGenRng = rng32(baseSeed);
+  gameplayRng = rng32(baseSeed ^ 0x12345678); // Different salt for gameplay
+  eventRng = rng32(baseSeed ^ 0x87654321);    // Different salt for events
+  
+  // Main state RNG follows gameplay stream
+  state.rng = gameplayRng;
+}
+
 // ===== World Generation =====
 async function generate(
   seed = Date.now(),
@@ -299,10 +326,14 @@ async function generate(
     medium: { w: 10, h: 8 },
     large: { w: 12, h: 8 },
   };
+  
+  // Initialize all RNG streams
+  initializeRngStreams(seed);
+  
   Object.assign(state.size, sizes[size]);
   Object.assign(state, {
-    seed,
-    rng: rng32(seed),
+    seed: generationSeed,
+    rng: gameplayRng,
     year: 1,
     gold: 3,
     food: 3,
@@ -318,14 +349,14 @@ async function generate(
     cy = (state.size.h - 1) / 2,
     maxR = Math.hypot(cx, cy);
   each((x, y, c: any) => {
-    const v = 0.6 - Math.hypot(x - cx, y - cy) / maxR + (rand() * 0.35 - 0.15);
+    const v = 0.6 - Math.hypot(x - cx, y - cy) / maxR + (worldGenRng!() * 0.35 - 0.15);
     c.type = v > 0 ? T.GRASS : T.WATER;
   });
   const L: Array<{ x: number; y: number }> = [];
   const n = Math.max(4, Math.floor((state.size.w * state.size.h) / 12));
   for (let i = 0; i < n; i++) {
-    const x = 1 + Math.floor(rand() * (state.size.w - 2)),
-      y = 1 + Math.floor(rand() * (state.size.h - 2));
+    const x = 1 + Math.floor(worldGenRng!() * (state.size.w - 2)),
+      y = 1 + Math.floor(worldGenRng!() * (state.size.h - 2));
     if ((state.map[idx(x, y)] as any).type !== T.WATER) L.push({ x, y });
   }
   each((x, y, c: any) => {
@@ -336,12 +367,12 @@ async function generate(
       k >= 4 ? T.MOUNTAIN : k === 3 ? T.HILL : k === 2 ? T.FOREST : T.GRASS;
   });
   for (const m of L) {
-    if (rand() < 0.25) {
+    if (worldGenRng!() < 0.25) {
       (state.map[idx(m.x, m.y)] as any).type = T.WATER;
       for (const d of DIRS) {
         const nx = m.x + d[0],
           ny = m.y + d[1];
-        if (inBounds(nx, ny) && rand() < 0.5)
+        if (inBounds(nx, ny) && worldGenRng!() < 0.5)
           (state.map[idx(nx, ny)] as any).type = T.WATER;
       }
     }
@@ -362,7 +393,7 @@ async function generate(
       towns < 2 &&
       (c.type === T.GRASS || c.type === T.FOREST) &&
       (x + y) % 7 === 0 &&
-      rand() < 0.25
+      worldGenRng!() < 0.25
     ) {
       c.type = T.TOWN;
       towns++;
@@ -370,8 +401,8 @@ async function generate(
   });
   // Compute initial heights based on terrain
   computeHeightMap();
-  // Deterministically set seed from current land/water layout
-  recomputeSeedFromMap();
+  // Update seed display for UI
+  updateSeedDisplay();
 
   // Load tile atlas for enhanced rendering - wait for it to load
   try {
@@ -384,7 +415,7 @@ async function generate(
   resize();
   hud();
   draw();
-  $("seedOut").textContent = String(state.seed);
+  $("seedOut").textContent = String(originalSeed);
   $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
 function reveal(cx: number, cy: number, r: number) {
@@ -764,7 +795,7 @@ function explore(x: number, y: number) {
   state.actions--;
   state.food = Math.max(0, state.food - EXPLORE.FOOD);
   const risk = state.year <= 5 ? 0.15 : EXPLORE.RISK;
-  if ((state.riskRng?.() || Math.random()) < risk && state.people > 0)
+  if (rand() < risk && state.people > 0)
     state.people--;
   reveal(x, y, 1);
   hud();
@@ -1097,7 +1128,7 @@ function randomEvent(d: any) {
     { n: "Treasure", w: 8 },
   ];
   const tot = EV.reduce((s, e) => s + e.w, 0);
-  let r = rand() * tot,
+  let r = eventRng!() * tot,
     pick: string = EV[0]!.n;
   for (const e of EV) {
     r -= e.w;
@@ -1113,7 +1144,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(rand() * v.length)];
+      const t = v[Math.floor(eventRng!() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let deathNote = "";
       if (ci.type === T.FARM) {
@@ -1162,7 +1193,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(rand() * v.length)];
+      const t = v[Math.floor(eventRng!() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let notes: string[] = [];
       if (HOUSELINE.includes(ci.type) && state.people > 0) {
@@ -1380,6 +1411,12 @@ showStart();
   // Height debug helpers
   computeHeightMap,
   adjustHeightByIndex,
+  // RNG testing and debugging
+  initializeRngStreams,
+  originalSeed: () => originalSeed,
+  worldGenRng: () => worldGenRng,
+  gameplayRng: () => gameplayRng,
+  eventRng: () => eventRng,
   setRenderer: (name: string) => {
     const RN = (window as any).KBTS_Renderer;
     RN?.set?.(name);
@@ -1575,7 +1612,9 @@ function computeHeightMap() {
         continue;
       }
       const dw = Math.min(COAST_MAX, dist[i] as number);
-      const coastPenalty = Math.max(0, COAST_MAX - (Number.isFinite(dw) ? dw : COAST_MAX)) * COAST_WEIGHT;
+      const coastPenalty =
+        Math.max(0, COAST_MAX - (Number.isFinite(dw) ? dw : COAST_MAX)) *
+        COAST_WEIGHT;
       const combined = Math.max(base[i] | 0, (potential[i] | 0) - coastPenalty);
       heights[i] = Math.max(1, Math.min(MAX_H, Math.floor(combined)));
     }
@@ -1597,7 +1636,10 @@ function computeHeightMap() {
         if (rt(nc) === T.MOUNTAIN) continue;
         maxN = Math.max(maxN, heights[ni] | 0);
       }
-      const req = Math.max(MIN_MOUNTAIN, (maxN > -Infinity ? (maxN | 0) + 1 : MIN_MOUNTAIN));
+      const req = Math.max(
+        MIN_MOUNTAIN,
+        maxN > -Infinity ? (maxN | 0) + 1 : MIN_MOUNTAIN
+      );
       if ((heights[i] | 0) < req) heights[i] = req;
     }
 
@@ -1618,28 +1660,37 @@ function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
   adjustHeightAt(x, y, delta, propagate);
 }
 
-// Bump the random seed when land is created/removed to reflect terrain changes
-function bumpSeed(
+// Create a deterministic sub-RNG for specific operations
+function createSubRng(baseSeed: number, operation: string, x?: number, y?: number): () => number {
+  // Create a unique seed for this specific operation and location
+  let subSeed = baseSeed;
+  for (let i = 0; i < operation.length; i++) {
+    subSeed = (subSeed * 31 + operation.charCodeAt(i)) >>> 0;
+  }
+  if (x !== undefined) subSeed = (subSeed * 73856093 + x) >>> 0;
+  if (y !== undefined) subSeed = (subSeed * 19349663 + y) >>> 0;
+  return rng32(subSeed);
+}
+
+// Updated function that doesn't mutate global seed
+function updateSeedForTerrain(
   reason: "land-created" | "land-removed",
   x: number,
   y: number
 ) {
-  // Mix old seed with position and reason salts, keep as uint32
-  const salt =
-    ((x + 1) * 73856093) ^
-    ((y + 1) * 19349663) ^
-    (reason === "land-created" ? 0x9e3779b9 : 0x85ebca6b);
-  let s = (state.seed >>> 0) ^ (salt >>> 0);
-  s = Math.imul(s ^ (s >>> 15), s | 1) >>> 0;
-  s = (s + 0x6d2b79f5) >>> 0;
-  state.seed = s >>> 0;
-  state.rng = rng32(state.seed);
+  // Create a sub-RNG specifically for terrain changes
+  // This maintains determinism without affecting the main RNG stream
+  const terrainRng = createSubRng(generationSeed, reason, x, y);
+  
+  // Update the display seed for UI purposes, but keep the RNG stream intact
+  const displaySeed = (state.seed * 1664525 + 1013904223) >>> 0;
   const so = document.getElementById("seedOut");
-  if (so) so.textContent = String(state.seed);
+  if (so) so.textContent = String(displaySeed);
 }
 
-// Deterministically recompute seed from full map state (tile types, upgrades, workers, flags, height)
-function recomputeSeedFromMap() {
+// Compute a hash of the current map state for display purposes only
+// This does NOT affect the RNG - it's just for UI/debugging
+function computeMapStateHash() {
   // FNV-1a 32-bit style mixing over width, height, and full per-tile state
   let h = 0x811c9dc5 >>> 0; // 2166136261
   const mix = (v: number) => {
@@ -1789,10 +1840,14 @@ function recomputeSeedFromMap() {
   h ^= h >>> 13;
   h = Math.imul(h, 0xc2b2ae35) >>> 0;
   h ^= h >>> 16;
-  state.seed = h >>> 0;
-  state.rng = rng32(state.seed);
+  return h >>> 0;
+}
+
+// Update the displayed seed for UI purposes without affecting RNG
+function updateSeedDisplay() {
+  const mapHash = computeMapStateHash();
   const so = document.getElementById("seedOut");
-  if (so) so.textContent = String(state.seed);
+  if (so) so.textContent = `${originalSeed} (state: ${mapHash.toString(16)})`;
 }
 
 // Apply a height value and convert between water and land at thresholds
@@ -1848,8 +1903,8 @@ function adjustHeightAt(
     // After manual edit, optionally smooth descent toward water
     smoothHeightsAround(x, y);
   }
-  // Recompute seed deterministically from land/water layout
-  recomputeSeedFromMap();
+  // Update the UI seed display to reflect the current state
+  updateSeedDisplay();
   draw();
 }
 

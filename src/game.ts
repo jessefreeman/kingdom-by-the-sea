@@ -1,5 +1,5 @@
 // Thin TypeScript adapter around the existing global KBTS game for gradual migration
-import { rendererManager } from './renderer';
+import { rendererManager } from './renderer/three';
 
 export function setRenderer(name: 'debug' | 'three') {
   const RN = (window as any).KBTS_Renderer as any;
