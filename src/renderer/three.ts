@@ -1040,11 +1040,11 @@ class ThreeRenderer implements RendererInterface {
         const hasSynergy =
           cell.type === T.FARM && (cell.fx || 0) === 2 && cell.disc;
 
-        // Create texture
+        // Create texture (respect FOW toggle)
         const texture = this.createTileTexture(
           t || T.WATER,
           isCoast,
-          cell.disc,
+          K.state.fogEnabled !== false ? cell.disc : true,
           isSelected,
           label,
           hasSynergy
@@ -1074,10 +1074,10 @@ class ThreeRenderer implements RendererInterface {
         // Add textured side faces for raised tiles against lower neighbors
         if (!isWater && heightLevel > 0) {
           const dirs = [
-            { dx: 0, dy: -1, axis: 'z' as const, sign: -1 as const }, // north
-            { dx: 0, dy: 1, axis: 'z' as const, sign: 1 as const },   // south
-            { dx: -1, dy: 0, axis: 'x' as const, sign: -1 as const }, // west
-            { dx: 1, dy: 0, axis: 'x' as const, sign: 1 as const },   // east
+            { dx: 0, dy: -1, axis: "z" as const, sign: -1 as const }, // north
+            { dx: 0, dy: 1, axis: "z" as const, sign: 1 as const }, // south
+            { dx: -1, dy: 0, axis: "x" as const, sign: -1 as const }, // west
+            { dx: 1, dy: 0, axis: "x" as const, sign: 1 as const }, // east
           ];
           for (const d of dirs) {
             const nx = x + d.dx;
@@ -1086,7 +1086,7 @@ class ThreeRenderer implements RendererInterface {
             if (inBounds(nx, ny)) {
               const nCell = state.map[idx(nx, ny)] as any;
               const nt = nCell ? (nCell.upg ? nCell.upg.to : nCell.type) : null;
-              nH = nCell && nt !== T.WATER ? (nCell.h | 0) : 0;
+              nH = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
             }
             const diff = heightLevel - nH;
             if (diff <= 0) continue;
@@ -1095,7 +1095,7 @@ class ThreeRenderer implements RendererInterface {
             const yCenter = nH * ThreeRenderer.HEIGHT_PER_LEVEL + hWorld / 2;
 
             // Use row 0 (solid color) of atlas for side faces by disabling letters and fog
-            let sideKey = (t || T.GRASS);
+            let sideKey = t || T.GRASS;
             if (sideKey === T.WATER) sideKey = T.GRASS; // fallback
             const sideTex = tileAtlas.getThreeTexture(sideKey, false, false);
             if (sideTex) {
@@ -1103,14 +1103,17 @@ class ThreeRenderer implements RendererInterface {
               sideTex.wrapT = THREE.RepeatWrapping;
               sideTex.repeat.set(1, diff);
             }
-            const sideMat = new THREE.MeshBasicMaterial({ map: sideTex || undefined, side: THREE.DoubleSide });
+            const sideMat = new THREE.MeshBasicMaterial({
+              map: sideTex || undefined,
+              side: THREE.DoubleSide,
+            });
             const sideGeom = new THREE.PlaneGeometry(1, hWorld);
             const side = new THREE.Mesh(sideGeom, sideMat);
 
             const cx = x - state.size.w / 2 + 0.5;
             const cz = y - state.size.h / 2 + 0.5;
             const eps = 0.001;
-            if (d.axis === 'z') {
+            if (d.axis === "z") {
               const zEdge = cz + (d.sign < 0 ? -0.5 - eps : 0.5 + eps);
               side.position.set(cx, yCenter, zEdge);
               if (d.sign < 0) side.rotation.y = Math.PI; // flip to face outwards

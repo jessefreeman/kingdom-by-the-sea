@@ -112,6 +112,7 @@ const state: State = {
   actions: 3,
   sel: null,
   riskRng: Math.random,
+  fogEnabled: true,
 };
 const rand = () => (state.rng ? (state.rng as () => number)() : Math.random());
 const idx = (x: number, y: number) => y * state.size.w + x;
@@ -431,7 +432,7 @@ function tile(x: number, y: number, c: any) {
     }
 
     const useLetters = true; // Use letter tiles during development
-    const useFog = !c.disc;
+    const useFog = state.fogEnabled !== false && !c.disc;
 
     const tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
     if (tileCanvas) {
@@ -507,7 +508,7 @@ function tile(x: number, y: number, c: any) {
     ctx.fillRect(px, py, ts, 2);
     ctx.restore();
   }
-  if (!c.disc) {
+  if (state.fogEnabled !== false && !c.disc) {
     ctx.fillStyle = C.fog || "#0a0d1a";
     ctx.globalAlpha = 0.75;
     ctx.fillRect(px, py, ts, ts);
@@ -519,7 +520,7 @@ function tile(x: number, y: number, c: any) {
     ctx.strokeRect(px + 1, py + 1, ts - 2, ts - 2);
   }
   let tl = "";
-  if (c.disc) {
+  if (c.disc || state.fogEnabled === false) {
     const tt = c.upg ? rt(c) : c.type;
     tl = LABEL[tt] || String(tt).slice(0, 2).toUpperCase();
   }
@@ -534,7 +535,7 @@ function tile(x: number, y: number, c: any) {
     ctx.restore();
   }
   // Height debug overlay
-  if (c.disc && (c.h | 0) > 0) {
+  if ((c.disc || state.fogEnabled === false) && (c.h | 0) > 0) {
     ctx.save();
     ctx.globalAlpha = 0.9;
     ctx.font = `bold ${Math.max(
@@ -603,6 +604,14 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
   }
   if (e.key === "-" || e.key === "_") {
     adjustHeightByIndex(state.sel, -1, true);
+    e.preventDefault();
+  }
+});
+// Fog of War toggle (F key)
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.key === "f" || e.key === "F") {
+    state.fogEnabled = !state.fogEnabled;
+    draw();
     e.preventDefault();
   }
 });
