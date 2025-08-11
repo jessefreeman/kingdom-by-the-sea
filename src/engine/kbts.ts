@@ -1487,7 +1487,8 @@ function computeHeightMap() {
       // Count adjacent mountains in 8 directions
       let adjM = 0;
       for (const [dx, dy] of DIRS8) {
-        const nx = x + dx, ny = y + dy;
+        const nx = x + dx,
+          ny = y + dy;
         if (!inBounds(nx, ny)) continue;
         const nc = state.map[I(nx, ny)] as any;
         if (nc && rt(nc) === T.MOUNTAIN) adjM++;
