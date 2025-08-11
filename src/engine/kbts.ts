@@ -60,7 +60,8 @@ const C: Record<string, string> = {
 const LABEL: Record<string, string> = {
   [T.GRASS]: "G",
   [T.FOREST]: "T",
-  [T.HILL]: "M",
+  // Use a different letter for HILL to avoid confusion with MOUNTAIN in debug dumps
+  [T.HILL]: "h",
   [T.MOUNTAIN]: "M",
   [T.HUT]: "H",
   [T.HOUSE]: "H",
