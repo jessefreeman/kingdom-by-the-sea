@@ -1,5 +1,6 @@
 // Boot the TypeScript KBTS engine and then wire renderer control helpers
 import './engine/kbts';
+import './renderer/three'; // Load Three.js renderer
 import { setRenderer, draw, resize } from './game';
 
 // Wire up renderer switching for dev

@@ -25,7 +25,7 @@ const each = (fn:(x:number,y:number,cell:Cell)=>void)=>{ for(let y=0;y<state.siz
 const rt = (c: any)=> c ? (c.upg ? c.upg.to : c.type) : null;
 
 // ===== Overlays =====
-const ov = (html:string, hook?: (box:HTMLElement, wrap:HTMLElement)=>void) => { const w=document.createElement('div'); w.className='overlay'; Object.assign(w.style,{position:'absolute',inset:'0',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.55)'} as CSSStyleDeclaration); w.innerHTML = `<div class="card">${html}</div>`; document.body.appendChild(w); if(hook) hook(w.querySelector('.card') as HTMLElement,w); return w; };
+const ov = (html:string, hook?: (box:HTMLElement, wrap:HTMLElement)=>void) => { const w=document.createElement('div'); w.className='overlay'; Object.assign(w.style,{position:'absolute',inset:'0',display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.55)',zIndex:'1000'} as CSSStyleDeclaration); w.innerHTML = `<div class="card">${html}</div>`; document.body.appendChild(w); if(hook) hook(w.querySelector('.card') as HTMLElement,w); return w; };
 
 // ===== Helpers =====
 const cell = (t: string): Cell => ({ type: t as any, disc:false, upg:null, wrk:0, fx:0 });
@@ -109,7 +109,8 @@ function tile(x:number,y:number,c:any){
   if(c.type===T.FARM && (c.fx|0)===2 && c.disc){ ctx.save(); ctx.font=`bold ${Math.max(8,Math.floor(ts*.5))}px ui-monospace,Menlo`; ctx.textAlign='right'; ctx.textBaseline='top'; ctx.fillStyle='#fff'; ctx.globalAlpha=.9; ctx.fillText('+',px+ts-3,py+2); ctx.restore(); }
   if(c.upg&&c.upg.total>1){ ctx.save(); ctx.fillStyle='#000'; ctx.globalAlpha=.45; ctx.fillRect(px+2,py+ts-10,24,8); ctx.globalAlpha=1; ctx.fillStyle='#fff'; ctx.font='bold 9px ui-monospace,Menlo'; const step=c.upg.prog||0; ctx.fillText(`${step}/${c.upg.total}`,px+14,py+ts-6); ctx.restore(); }
 }
-function draw(){ const RN=(window as any).KBTS_Renderer; if(RN?.draw){ RN.draw(); return; } ctx.clearRect(0,0,canvas.width,canvas.height); each((x,y,c)=>tile(x,y,c)); }
+function drawCanvas(){ ctx.clearRect(0,0,canvas.width,canvas.height); each((x,y,c)=>tile(x,y,c)); }
+function draw(){ const RN=(window as any).KBTS_Renderer; if(RN?.draw){ RN.draw(); return; } drawCanvas(); }
 
 // ===== Input =====
 const canvasClick = (e: MouseEvent) => { const r=canvas.getBoundingClientRect(); const x=Math.floor((e.clientX-r.left)/state.size.t), y=Math.floor((e.clientY-r.top)/state.size.t); if(!inBounds(x,y)) return; state.sel=idx(x,y); draw(); openPanel(x,y); };
@@ -194,11 +195,12 @@ showStart();
 // Expose KBTS for renderer/tests
 (window as any).KBTS = {
   $, rng32, state, T, C, LABEL, SPEC, BASE, DIRS, idx, inBounds, each, cell,
-  generate, reveal, ensureStartResources, label, draw, resize, hud,
+  generate, reveal, ensureStartResources, label, draw, drawCanvas, resize, hud,
   canExplore, explore, isCoast, startUpgrade, applyAdjacencyBonuses,
   uniqueAvailable, noHouseNearby, houseNearby, setFarmWorkers, farmWorkers,
   updateFarmSynergy, endTurn, randomEvent, summary, countType, afford, whyNo,
   showStart, start: (size?: any)=>generate(undefined as any, size), tileInfo,
+  openPanel,
   setRenderer: (name: string)=>{ const RN=(window as any).KBTS_Renderer; RN?.set?.(name); },
   getRenderer: ()=>{ const RN=(window as any).KBTS_Renderer; return RN?.get?.()||'debug'; },
 };

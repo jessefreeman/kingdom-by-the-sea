@@ -17,10 +17,13 @@
     .btn{border:1px solid #31407b;background:#171c38;color:var(--w);padding:9px 11px;border-radius:10px;cursor:pointer;font-weight:700}
     .btn[disabled]{opacity:.55;cursor:not-allowed}.btn.primary{background:#25306a;border-color:#3b4aad}
     .hint{color:var(--muted);font-size:12px}.sep{height:1px;background:#2a355f;margin:6px 0}
-    #stageWrap{position:relative;display:flex;align-items:center;justify-content:center;padding:8px}
-    #gameCanvas{background:#061021;image-rendering:pixelated;border:1px solid #273155;border-radius:8px;box-shadow:0 0 0 2px #0d1327 inset}
-    #panel{position:absolute;right:12px;top:12px;width:340px}.card{border:1px solid #2a3561;border-radius:12px;padding:10px;background:#0e1430}
+    #stageWrap{position:relative;display:flex;flex-direction:column;height:100%;padding:8px;gap:8px}
+    #threeContainer{flex:1;border:1px solid #273155;border-radius:8px;box-shadow:0 0 0 2px #0d1327 inset;background:#061021;position:relative}
+    #debugContainer{flex:1;display:flex;align-items:center;justify-content:center}
+    #gameCanvas{background:#061021;image-rendering:pixelated;border:1px solid #273155;border-radius:8px;box-shadow:0 0 0 2px #0d1327 inset;position:relative;z-index:1}
+    #panel{position:absolute;right:12px;top:12px;width:340px;z-index:100}.card{border:1px solid #2a3561;border-radius:12px;padding:10px;background:#0e1430}
     .section{border:1px solid #2b3561;padding:8px;border-radius:8px;margin-bottom:8px}.title{font-weight:800;margin-bottom:6px}
+    .overlay{z-index:1000!important}
   </style>
 </head>
 <body>
@@ -46,7 +49,10 @@
       <div class="row" style="grid-template-columns:auto"><button class="btn" id="reset">Reset</button></div>
     </aside>
     <main id="stageWrap">
-      <canvas id="gameCanvas" width="720" height="480"></canvas>
+      <div id="threeContainer"></div>
+      <div id="debugContainer">
+        <canvas id="gameCanvas" width="720" height="480"></canvas>
+      </div>
       <div id="panel"></div>
     </main>
   </div>
