@@ -8,5 +8,5 @@ import { setRenderer, draw, resize } from './game';
 
 window.addEventListener('resize', () => resize());
 
-// Default to debug; allow switching in console: KBTS_TS.setRenderer('three')
-setRenderer('debug');
+// Default to three; allow switching in console: KBTS_TS.setRenderer('debug')
+setRenderer('three');
