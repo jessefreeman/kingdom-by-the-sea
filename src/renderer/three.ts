@@ -1196,7 +1196,12 @@ class ThreeRenderer implements RendererInterface {
       // Get texture for side face
       let sideKey = t || T.GRASS;
       if (sideKey === T.WATER) sideKey = T.GRASS;
-      const sideTex = tileAtlas.getThreeTexture(sideKey, false, false);
+      
+      // Check if this tile should use FOW texture
+      const isWaterTile = t === T.WATER;
+      const isDiscoveredForTexture = isWaterTile ? true : (K.state.fogEnabled !== false ? cell.disc : true);
+      
+      const sideTex = tileAtlas.getThreeTexture(sideKey, false, !isDiscoveredForTexture);
       if (sideTex) {
         sideTex.wrapS = THREE.RepeatWrapping;
         sideTex.wrapT = THREE.RepeatWrapping;
@@ -1438,10 +1443,10 @@ class ThreeRenderer implements RendererInterface {
             const hWorld = diff * ThreeRenderer.HEIGHT_PER_LEVEL;
             const yCenter = nH * ThreeRenderer.HEIGHT_PER_LEVEL + hWorld / 2;
 
-            // Use row 0 (solid color) of atlas for side faces by disabling letters and fog
+            // Use row 0 (solid color) of atlas for side faces by disabling letters and using FOW for undiscovered tiles
             let sideKey = t || T.GRASS;
             if (sideKey === T.WATER) sideKey = T.GRASS; // fallback
-            const sideTex = tileAtlas.getThreeTexture(sideKey, false, false);
+            const sideTex = tileAtlas.getThreeTexture(sideKey, false, !isDiscoveredForTexture);
             if (sideTex) {
               sideTex.wrapS = THREE.RepeatWrapping;
               sideTex.wrapT = THREE.RepeatWrapping;
