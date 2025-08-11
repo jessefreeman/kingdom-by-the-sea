@@ -1399,7 +1399,12 @@ function computeHeightMap() {
   const W = state.size.w,
     H = state.size.h;
   const I = (x: number, y: number) => y * W + x;
-  // 8-direction offsets (including diagonals)
+  const DIRS4: ReadonlyArray<[number, number]> = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
   const DIRS8: ReadonlyArray<[number, number]> = [
     [1, 0],
     [-1, 0],
@@ -1411,8 +1416,18 @@ function computeHeightMap() {
     [-1, -1],
   ];
 
-  // Base heights by tile type
-  const baseHeights = new Array(W * H).fill(0);
+  // Tunables for organic verticality
+  const PEAK_BASE = 5; // base seed for mountain tiles
+  const DEPTH_BOOST = 2; // extra per step toward interior of a range
+  const ADJ_BOOST = 1; // bonus per adjacent mountain (8-dir)
+  const FALLOFF = 1; // height loss per step when propagating out
+  const COAST_MAX = 3; // tiles from coast where we apply lowering
+  const COAST_WEIGHT = 1; // how much to lower near coast per missing distance
+  const MIN_MOUNTAIN = 4; // mountains are at least this high
+  const MAX_H = 30; // clamp to avoid extreme values
+
+  // 1) Baseline by tile type
+  const base = new Array(W * H).fill(0);
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const c = state.map[I(x, y)] as any;
@@ -1420,47 +1435,43 @@ function computeHeightMap() {
       let h0 = 0;
       if (t === T.WATER) h0 = 0;
       else if (t === T.GRASS) h0 = 1;
-      else if (t === T.FOREST || t === T.HILL) h0 = 2;
-      else if (t === T.MOUNTAIN) h0 = 3;
-      else h0 = 1; // default land/buildings baseline
-      baseHeights[I(x, y)] = h0;
+      else if (t === T.FOREST) h0 = 2;
+      else if (t === T.HILL) h0 = 3;
+      else if (t === T.MOUNTAIN) h0 = 3; // seed will raise higher
+      else h0 = 1; // buildings and others sit on land
+      base[I(x, y)] = h0;
     }
 
-  // Copy to working heights
-  const heights = baseHeights.slice();
-
-  // Step 1: Tiered mountain heights based on depth inside mountain component (8-dir)
-  // Depth 0 for boundary mountains (adjacent to any non-mountain), deeper tiles get larger depth.
+  // 2) Mountain range interior depth (8-dir) for range-peaks higher than edges
   const mDepth = new Array(W * H).fill(-1);
-  const q: Array<[number, number]> = [];
-  // Seed boundary mountains
+  const seedQ: Array<[number, number]> = [];
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const i = I(x, y);
       const c = state.map[i] as any;
       if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let isBoundary = false;
+      let boundary = false;
       for (const [dx, dy] of DIRS8) {
         const nx = x + dx,
           ny = y + dy;
         if (!inBounds(nx, ny)) {
-          isBoundary = true; // edge of map counts as boundary
+          boundary = true;
           break;
         }
         const nc = state.map[I(nx, ny)] as any;
         if (!nc || rt(nc) !== T.MOUNTAIN) {
-          isBoundary = true;
+          boundary = true;
           break;
         }
       }
-      if (isBoundary) {
+      if (boundary) {
         mDepth[i] = 0;
-        q.push([x, y]);
+        seedQ.push([x, y]);
       }
     }
-  // BFS inward to assign depth
-  while (q.length) {
-    const [cx, cy] = q.shift()!;
+  // BFS inward to compute depth
+  while (seedQ.length) {
+    const [cx, cy] = seedQ.shift()!;
     const ci = I(cx, cy);
     for (const [dx, dy] of DIRS8) {
       const nx = cx + dx,
@@ -1471,20 +1482,20 @@ function computeHeightMap() {
       if (!nc || rt(nc) !== T.MOUNTAIN) continue;
       if (mDepth[ni] === -1) {
         mDepth[ni] = (mDepth[ci] | 0) + 1;
-        q.push([nx, ny]);
+        seedQ.push([nx, ny]);
       }
     }
   }
-  // Set mountain heights: base 3 plus depth (unvisited single mountains treated as boundary depth 0)
+
+  // 3) Seed mountain potentials and propagate outward with falloff across land (8-dir)
+  const potential = new Array(W * H).fill(0);
+  const q: Array<[number, number]> = [];
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const i = I(x, y);
       const c = state.map[i] as any;
       if (!c || rt(c) !== T.MOUNTAIN) continue;
-      const d = mDepth[i] >= 0 ? mDepth[i] : 0;
-      // Base mountain height
-      let hBase = 3 + d;
-      // Count adjacent mountains in 8 directions
+      // Count adjacent mountains to boost ridges/lines
       let adjM = 0;
       for (const [dx, dy] of DIRS8) {
         const nx = x + dx,
@@ -1493,114 +1504,88 @@ function computeHeightMap() {
         const nc = state.map[I(nx, ny)] as any;
         if (nc && rt(nc) === T.MOUNTAIN) adjM++;
       }
-      // Double mountains to ensure they stand above surroundings, and add neighbor bonus
-      heights[i] = Math.max(6, hBase * 2) + adjM;
+      const depth = Math.max(0, mDepth[i]);
+      const seedVal = Math.max(
+        MIN_MOUNTAIN,
+        PEAK_BASE + depth * DEPTH_BOOST + adjM * ADJ_BOOST
+      );
+      potential[i] = Math.max(potential[i], seedVal | 0);
+      q.push([x, y]);
     }
-
-  // Step 2: for each mountain tile, increase all surrounding tiles (8-dir)
-  // to at least mountainHeight - 1, skipping water tiles (water must stay 0)
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c || rt(c) !== T.MOUNTAIN) continue;
-      const mH = heights[i] | 0;
-      for (const [dx, dy] of DIRS8) {
-        const nx = x + dx,
-          ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        const ni = I(nx, ny);
-        const nc = state.map[ni] as any;
-        if (!nc || rt(nc) === T.WATER) continue; // keep water at 0
-        heights[ni] = Math.max(heights[ni], Math.max(1, mH - 1));
-      }
-    }
-
-  // Step 3: enforce mountain dominance over non-mountain neighbors (8-dir)
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let maxNeighbor = -Infinity;
-      for (const [dx, dy] of DIRS8) {
-        const nx = x + dx,
-          ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        const ni = I(nx, ny);
-        const nc = state.map[ni] as any;
-        if (!nc) continue;
-        const nt = rt(nc);
-        if (nt === T.MOUNTAIN) continue; // only non-mountain neighbors
-        maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
-      }
-      if (maxNeighbor > -Infinity) {
-        const required = (maxNeighbor | 0) + 1;
-        if ((heights[i] | 0) < required) heights[i] = required;
+  // Multi-source BFS propagation (skip water)
+  while (q.length) {
+    const [cx, cy] = q.shift()!;
+    const ci = I(cx, cy);
+    const cur = potential[ci] | 0;
+    if (cur <= 0) continue;
+    for (const [dx, dy] of DIRS8) {
+      const nx = cx + dx,
+        ny = cy + dy;
+      if (!inBounds(nx, ny)) continue;
+      const ni = I(nx, ny);
+      const nc = state.map[ni] as any;
+      if (!nc || rt(nc) === T.WATER) continue; // don't raise water
+      const cand = cur - FALLOFF;
+      if (cand > (potential[ni] | 0)) {
+        potential[ni] = cand;
+        q.push([nx, ny]);
       }
     }
-
-  // Step 4: iterate to fixpoint combining dominance and neighbor raise to ensure tiers
-  let changed = true;
-  let guard = 0;
-  while (changed && guard++ < W * H * 4) {
-    changed = false;
-    // Enforce mountain > non-mountain neighbors + 1
-    for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) {
-        const i = I(x, y);
-        const c = state.map[i] as any;
-        if (!c || rt(c) !== T.MOUNTAIN) continue;
-        let maxNeighbor = -Infinity;
-        for (const [dx, dy] of DIRS8) {
-          const nx = x + dx,
-            ny = y + dy;
-          if (!inBounds(nx, ny)) continue;
-          const ni = I(nx, ny);
-          const nc = state.map[ni] as any;
-          if (!nc) continue;
-          const nt = rt(nc);
-          if (nt === T.MOUNTAIN) continue;
-          maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
-        }
-        if (maxNeighbor > -Infinity) {
-          const required = (maxNeighbor | 0) + 1;
-          if ((heights[i] | 0) < required) {
-            heights[i] = required;
-            changed = true;
-          }
-        }
-      }
-    // Raise neighbors to at least H-1 (non-water)
-    for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) {
-        const i = I(x, y);
-        const c = state.map[i] as any;
-        if (!c || rt(c) !== T.MOUNTAIN) continue;
-        const mH = heights[i] | 0;
-        for (const [dx, dy] of DIRS8) {
-          const nx = x + dx,
-            ny = y + dy;
-          if (!inBounds(nx, ny)) continue;
-          const ni = I(nx, ny);
-          const nc = state.map[ni] as any;
-          if (!nc || rt(nc) === T.WATER) continue;
-          const target = Math.max(1, mH - 1);
-          if ((heights[ni] | 0) < target) {
-            heights[ni] = target;
-            changed = true;
-          }
-        }
-      }
   }
 
-  // Final enforcement: mountains strictly above surrounding non-mountain tiles and baseline >= 3
+  // 4) Distance to water (4-dir) to lower land near coasts for natural shorelines
+  const dist = new Array(W * H).fill(Number.POSITIVE_INFINITY);
+  const dq: Array<[number, number]> = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (c && rt(c) === T.WATER) {
+        dist[i] = 0;
+        dq.push([x, y]);
+      }
+    }
+  while (dq.length) {
+    const [cx, cy] = dq.shift()!;
+    const ci = I(cx, cy);
+    for (const [dx, dy] of DIRS4) {
+      const nx = cx + dx,
+        ny = cy + dy;
+      if (!inBounds(nx, ny)) continue;
+      const ni = I(nx, ny);
+      const nd = (dist[ci] | 0) + 1;
+      if (nd < (dist[ni] as number)) {
+        dist[ni] = nd;
+        dq.push([nx, ny]);
+      }
+    }
+  }
+
+  // 5) Combine base + propagated potential - coastal penalty, then enforce dominance
+  const heights = new Array(W * H).fill(0);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c) continue;
+      const t = rt(c);
+      if (t === T.WATER) {
+        heights[i] = 0;
+        continue;
+      }
+      const dw = Math.min(COAST_MAX, dist[i] as number);
+      const coastPenalty = Math.max(0, COAST_MAX - (Number.isFinite(dw) ? dw : COAST_MAX)) * COAST_WEIGHT;
+      const combined = Math.max(base[i] | 0, (potential[i] | 0) - coastPenalty);
+      heights[i] = Math.max(1, Math.min(MAX_H, Math.floor(combined)));
+    }
+
+  // Enforce mountain tiles stand above any non-mountain neighbors
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const i = I(x, y);
       const c = state.map[i] as any;
       if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let maxNeighbor = -Infinity;
+      let maxN = -Infinity;
       for (const [dx, dy] of DIRS8) {
         const nx = x + dx,
           ny = y + dy;
@@ -1608,16 +1593,14 @@ function computeHeightMap() {
         const ni = I(nx, ny);
         const nc = state.map[ni] as any;
         if (!nc) continue;
-        const nt = rt(nc);
-        if (nt === T.MOUNTAIN) continue;
-        maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
+        if (rt(nc) === T.MOUNTAIN) continue;
+        maxN = Math.max(maxN, heights[ni] | 0);
       }
-      const base = 3;
-      const req = maxNeighbor > -Infinity ? (maxNeighbor | 0) + 1 : base;
-      if ((heights[i] | 0) < req) heights[i] = Math.max(base, req);
+      const req = Math.max(MIN_MOUNTAIN, (maxN > -Infinity ? (maxN | 0) + 1 : MIN_MOUNTAIN));
+      if ((heights[i] | 0) < req) heights[i] = req;
     }
 
-  // Assign back to cells (water stays 0, land at least 1)
+  // 6) Assign back to cells
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       const i = I(x, y);
