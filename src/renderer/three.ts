@@ -37,6 +37,7 @@ class ThreeRenderer implements RendererInterface {
   private camera: any = null;
   private renderer: any = null;
   private tileMeshes: any[] = [];
+  private waterPlane: any = null;
   private container: HTMLElement | null = null;
   private controls: any = null;
   private isDragging: boolean = false;
@@ -75,7 +76,14 @@ class ThreeRenderer implements RendererInterface {
 
       // Scene setup
       this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color('#061021');
+      
+      // Create tiled deep water background using tile atlas
+      if (tileAtlas.isLoaded()) {
+        this.createTiledBackground();
+      } else {
+        // Fallback to solid color if atlas not loaded
+        this.scene.background = new THREE.Color('#061021');
+      }
 
       // Use full container dimensions
       const containerWidth = this.container.clientWidth;
@@ -289,6 +297,65 @@ class ThreeRenderer implements RendererInterface {
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
     return texture;
+  }
+
+  private createTiledBackground() {
+    if (!window.THREE || !tileAtlas.isLoaded()) return;
+    
+    const THREE = window.THREE;
+    
+    // Set sky to black tile (column 0)
+    const blackTexture = tileAtlas.getThreeTexture('black', false, false);
+    if (blackTexture) {
+      this.scene!.background = blackTexture;
+    } else {
+      this.scene!.background = new THREE.Color('#000000');
+    }
+    
+    // Create water plane using deep water tile (column 1, with 'D' letter)
+    this.createWaterPlane();
+  }
+
+  private createWaterPlane() {
+    if (!window.THREE || !tileAtlas.isLoaded()) return;
+    
+    const THREE = window.THREE;
+    const K = (window as any).KBTS;
+    
+    // Remove existing water plane if it exists
+    if (this.waterPlane) {
+      this.scene!.remove(this.waterPlane);
+      this.waterPlane.geometry.dispose();
+      this.waterPlane.material.dispose();
+    }
+    
+    // Get the deep water tile texture
+    const deepWaterTexture = tileAtlas.getThreeTexture('water', true, false);
+    if (!deepWaterTexture) return;
+    
+    // Set up the texture for tiling
+    deepWaterTexture.wrapS = THREE.RepeatWrapping;
+    deepWaterTexture.wrapT = THREE.RepeatWrapping;
+    
+    // Scale the tiling to match the map tile size (1 unit = 1 tile)
+    const planeSize = 100; // Large plane to extend beyond the map
+    const tileScale = planeSize; // 1 texture repeat per 1 world unit
+    deepWaterTexture.repeat.set(tileScale, tileScale);
+    
+    // Create a large water plane
+    const geometry = new THREE.PlaneGeometry(planeSize, planeSize);
+    const material = new THREE.MeshBasicMaterial({ 
+      map: deepWaterTexture,
+      transparent: false
+    });
+    
+    this.waterPlane = new THREE.Mesh(geometry, material);
+    
+    // Position the water plane slightly below the map (Y = -0.01)
+    this.waterPlane.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+    this.waterPlane.position.set(0, -0.01, 0);
+    
+    this.scene!.add(this.waterPlane);
   }
 
   private handleClick(e: MouseEvent) {
@@ -861,6 +928,9 @@ class ThreeRenderer implements RendererInterface {
     const { state, idx, inBounds, T, LABEL } = K;
     const THREE = window.THREE;
 
+    // Update tiled background to match water tiles
+    this.createTiledBackground();
+
     // Clear existing tiles
     this.tileMeshes.forEach(mesh => {
       this.scene!.remove(mesh);
@@ -965,6 +1035,14 @@ class ThreeRenderer implements RendererInterface {
       if (mesh.material) mesh.material.dispose();
     });
     this.tileMeshes = [];
+
+    // Clean up water plane
+    if (this.waterPlane) {
+      if (this.scene) this.scene.remove(this.waterPlane);
+      this.waterPlane.geometry.dispose();
+      this.waterPlane.material.dispose();
+      this.waterPlane = null;
+    }
 
     if (this.renderer) {
       this.renderer.domElement.remove();
