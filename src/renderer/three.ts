@@ -6,7 +6,7 @@
 // - Right click + drag: Rotate camera (respects axis toggles)
 // - Middle click + drag: Pan camera target
 // - Mouse wheel: Zoom in/out
-// - D key: Toggle debug overlay and control buttons
+// - D key: Toggle debug overlay and control buttons (overlay hidden by default)
 // - R key: Reset camera to default position
 // - C key: Center camera on map
 // - P key: Print current values to console
@@ -14,7 +14,7 @@
 // - WASD: Fine angle adjustment
 // - Q/E: Distance adjustment
 // - Arrow keys: Precise angle adjustment
-// - +/- keys: Zoom in/out
+// - +/- keys: Zoom in/out (disabled; reserved for height debug)
 
 import { tileAtlas } from '../tileAtlas';
 
@@ -51,7 +51,7 @@ class ThreeRenderer implements RendererInterface {
   private cameraAngleY = 0.84; // 48.1° - isometric rotation
   private animationFrameId: number | null = null;
   private needsRender = false;
-  private debugMode = true; // Enable debug mode
+  private debugMode = false; // Hide debug overlay by default
   private debugElement: HTMLElement | null = null;
   public inited = false;
   private static readonly HEIGHT_PER_LEVEL = 1; // 1 world unit per height level
@@ -155,8 +155,8 @@ class ThreeRenderer implements RendererInterface {
       // Set initial camera position
       this.updateCameraPosition();
 
-      // Create debug overlay
-      this.createDebugOverlay();
+  // Create debug overlay only if enabled
+  this.createDebugOverlay();
 
       // Start the render loop
       this.startRenderLoop();
@@ -808,18 +808,7 @@ class ThreeRenderer implements RendererInterface {
       e.preventDefault();
     }
 
-    // Zoom controls with +/- keys
-    if (e.key === '=' || e.key === '+') {
-      this.cameraDistance = Math.max(5, this.cameraDistance * 0.8);
-      this.updateCameraPosition();
-      e.preventDefault();
-    }
-
-    if (e.key === '-' || e.key === '_') {
-      this.cameraDistance = Math.min(100, this.cameraDistance * 1.25);
-      this.updateCameraPosition();
-      e.preventDefault();
-    }
+  // Zoom controls with +/- keys are disabled to reserve keys for height testing
 
     // Arrow keys for precise angle adjustment
     if (e.key === 'ArrowLeft') {

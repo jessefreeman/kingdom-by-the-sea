@@ -207,6 +207,8 @@ function tile(x:number,y:number,c:any){
   let tl='';
   if(c.disc){ const tt=c.upg?rt(c):c.type; tl=LABEL[tt]||(String(tt).slice(0,2).toUpperCase()); }
   if(tl){ ctx.save(); ctx.globalAlpha=.25; ctx.font=`bold ${Math.max(9,Math.floor(ts*.6))}px ui-monospace,Menlo`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff'; ctx.fillText(tl,px+ts/2,py+ts/2+.5); ctx.restore(); }
+  // Height debug overlay
+  if(c.disc && (c.h|0)>0){ ctx.save(); ctx.globalAlpha=.9; ctx.font=`bold ${Math.max(7,Math.floor(ts*.35))}px ui-monospace,Menlo`; ctx.textAlign='left'; ctx.textBaseline='top'; ctx.fillStyle='#fff'; ctx.fillText('h'+(c.h|0), px+2, py+2); ctx.restore(); }
   if(c.type===T.FARM && (c.fx|0)===2 && c.disc){ ctx.save(); ctx.font=`bold ${Math.max(8,Math.floor(ts*.5))}px ui-monospace,Menlo`; ctx.textAlign='right'; ctx.textBaseline='top'; ctx.fillStyle='#fff'; ctx.globalAlpha=.9; ctx.fillText('+',px+ts-3,py+2); ctx.restore(); }
   if(c.upg&&c.upg.total>1){ ctx.save(); ctx.fillStyle='#000'; ctx.globalAlpha=.45; ctx.fillRect(px+2,py+ts-10,24,8); ctx.globalAlpha=1; ctx.fillStyle='#fff'; ctx.font='bold 9px ui-monospace,Menlo'; const step=c.upg.prog||0; ctx.fillText(`${step}/${c.upg.total}`,px+14,py+ts-6); ctx.restore(); }
 }
