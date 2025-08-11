@@ -268,7 +268,7 @@ class ThreeRenderer implements RendererInterface {
       const mesh = intersects[0].object;
       // Find the tile coordinates from mesh position (now using X and Z)
       const x = Math.round(mesh.position.x + K.state.size.w/2 - 0.5);
-      const y = Math.round(-mesh.position.z + K.state.size.h/2 - 0.5);
+      const y = Math.round(mesh.position.z + K.state.size.h/2 - 0.5);
       
       if (K.inBounds(x, y)) {
         K.state.sel = K.idx(x, y);
@@ -843,7 +843,7 @@ class ThreeRenderer implements RendererInterface {
         // Position mesh on the ground (XZ plane at Y=0)
         // Rotate the plane to lie flat on the ground
         mesh.rotation.x = -Math.PI / 2; // Rotate 90 degrees to be horizontal
-        mesh.position.set(x - state.size.w/2 + 0.5, 0, -(y - state.size.h/2 + 0.5));
+        mesh.position.set(x - state.size.w/2 + 0.5, 0, (y - state.size.h/2 + 0.5));
         
         this.scene.add(mesh);
         this.tileMeshes.push(mesh);
