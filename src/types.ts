@@ -1,19 +1,58 @@
 // Shared types and enums for Kingdom by the Sea
 export type TileType =
-  | 'water' | 'grass' | 'forest' | 'hill' | 'mountain'
-  | 'hut' | 'house' | 'mansion' | 'palace' | 'castle'
-  | 'farm' | 'mine' | 'burnt' | 'rubble' | 'dock' | 'town';
+  | "water"
+  | "grass"
+  | "forest"
+  | "hill"
+  | "mountain"
+  | "hut"
+  | "house"
+  | "mansion"
+  | "palace"
+  | "castle"
+  | "farm"
+  | "mine"
+  | "burnt"
+  | "rubble"
+  | "dock"
+  | "town";
 
 export const T: Record<string, TileType> = {
-  WATER: 'water', GRASS: 'grass', FOREST: 'forest', HILL: 'hill', MOUNTAIN: 'mountain',
-  HUT: 'hut', HOUSE: 'house', MANSION: 'mansion', PALACE: 'palace', CASTLE: 'castle',
-  FARM: 'farm', MINE: 'mine', BURNT: 'burnt', RUBBLE: 'rubble', DOCK: 'dock', TOWN: 'town'
+  WATER: "water",
+  GRASS: "grass",
+  FOREST: "forest",
+  HILL: "hill",
+  MOUNTAIN: "mountain",
+  HUT: "hut",
+  HOUSE: "house",
+  MANSION: "mansion",
+  PALACE: "palace",
+  CASTLE: "castle",
+  FARM: "farm",
+  MINE: "mine",
+  BURNT: "burnt",
+  RUBBLE: "rubble",
+  DOCK: "dock",
+  TOWN: "town",
 } as const;
 
 export type Yield = Partial<{ G: number; F: number; W: number; P: number }>;
 export type Size = { w: number; h: number; t: number };
-export type Cell = { type: TileType; disc: boolean; upg: null | Upgrade; wrk?: number; fx?: number; h?: number };
-export type Upgrade = { to: TileType; left: number; total: number; prog?: number; spec: UpgradeSpec };
+export type Cell = {
+  type: TileType;
+  disc: boolean;
+  upg: null | Upgrade;
+  wrk?: number;
+  fx?: number;
+  h?: number;
+};
+export type Upgrade = {
+  to: TileType;
+  left: number;
+  total: number;
+  prog?: number;
+  spec: UpgradeSpec;
+};
 export type UpgradeSpec = {
   to: TileType;
   cost: Partial<{ G: number; W: number; F: number; P: number }>;
