@@ -54,7 +54,7 @@ class ThreeRenderer implements RendererInterface {
   private debugMode = false; // Hide debug overlay by default
   private debugElement: HTMLElement | null = null;
   public inited = false;
-  private static readonly HEIGHT_PER_LEVEL = 1; // 1 world unit per height level
+  private static readonly HEIGHT_PER_LEVEL = 0.5; // 0.5 world units per height level (half previous)
 
   async init() {
     const K = (window as any).KBTS;
