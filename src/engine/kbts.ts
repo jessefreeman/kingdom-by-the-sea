@@ -1387,115 +1387,88 @@ showStart();
 function computeHeightMap() {
   const W = state.size.w,
     H = state.size.h;
-  const heights = new Array(W * H).fill(0);
-  // Seed mountains
-  each((x, y, c: any) => {
-    if (c.type === T.MOUNTAIN) {
-      heights[idx(x, y)] = 2;
-    }
-  });
-  // Neighbor raise around mountains
-  each((x, y, c: any) => {
-    if (c.type !== T.MOUNTAIN) return;
-    for (const d of DIRS) {
-      const nx = x + d[0],
-        ny = y + d[1];
-      if (!inBounds(nx, ny)) continue;
-      const ni = idx(nx, ny);
-      const nc = state.map[ni] as any;
-      if (nc && rt(nc) !== T.WATER) heights[ni] = Math.max(heights[ni], 1);
-    }
-  });
-  // Mountain ranges: BFS over connected mountains, raise inner tiles
-  const seen = new Array(W * H).fill(false);
+  const I = (x: number, y: number) => y * W + x;
+  // 8-direction offsets (including diagonals)
+  const DIRS8: ReadonlyArray<[number, number]> = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+
+  // Base heights by tile type
+  const baseHeights = new Array(W * H).fill(0);
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const i = idx(x, y);
-      if (seen[i]) continue;
+      const c = state.map[I(x, y)] as any;
+      const t = rt(c);
+      let h0 = 0;
+      if (t === T.WATER) h0 = 0;
+      else if (t === T.GRASS) h0 = 1;
+      else if (t === T.FOREST || t === T.HILL) h0 = 2;
+      else if (t === T.MOUNTAIN) h0 = 3;
+      else h0 = 1; // default land/buildings baseline
+      baseHeights[I(x, y)] = h0;
+    }
+
+  // Copy to working heights
+  const heights = baseHeights.slice();
+
+  // Step 1: mountains that touch any other mountain (8-dir) grow by +1
+  const mountainGrow = new Array(W * H).fill(0);
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
       const c = state.map[i] as any;
-      if (!c || c.type !== T.MOUNTAIN) continue;
-      // Collect component
-      const comp: Array<[number, number]> = [];
-      const q: Array<[number, number]> = [[x, y]];
-      seen[i] = true;
-      while (q.length) {
-        const [cx, cy] = q.shift()!;
-        comp.push([cx, cy]);
-        for (const d of DIRS) {
-          const nx = cx + d[0],
-            ny = cy + d[1];
-          if (!inBounds(nx, ny)) continue;
-          const ni = idx(nx, ny);
-          if (seen[ni]) continue;
-          const nc = state.map[ni] as any;
-          if (nc && nc.type === T.MOUNTAIN) {
-            seen[ni] = true;
-            q.push([nx, ny]);
-          }
+      if (!c || rt(c) !== T.MOUNTAIN) continue;
+      let touches = false;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx,
+          ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const nc = state.map[I(nx, ny)] as any;
+        if (nc && rt(nc) === T.MOUNTAIN) {
+          touches = true;
+          break;
         }
       }
-      if (comp.length >= 2) {
-        // Determine a "center" as the tile with most mountain neighbors
-        let best: [number, number] = comp[0]!,
-          bestDeg = -1;
-        for (const [cx, cy] of comp) {
-          let deg = 0;
-          for (const d of DIRS) {
-            const nx = cx + d[0],
-              ny = cy + d[1];
-            if (!inBounds(nx, ny)) continue;
-            const nc = state.map[idx(nx, ny)] as any;
-            if (nc && nc.type === T.MOUNTAIN) deg++;
-          }
-          if (deg > bestDeg) {
-            bestDeg = deg;
-            best = [cx, cy];
-          }
-        }
-        // Raise center proportional to degree (cap at 3 for now)
-        const centerI = idx(best[0], best[1]);
-        heights[centerI] = Math.max(
-          heights[centerI],
-          Math.min(3, 2 + Math.max(0, bestDeg - 2))
-        );
-        // Other mountain tiles reduced by 1 toward base 1
-        for (const [mx, my] of comp) {
-          const mi = idx(mx, my);
-          if (mi === centerI) continue;
-          heights[mi] = Math.max(1, heights[mi] - 1);
-        }
-      }
+      if (touches) mountainGrow[i] = 1;
     }
-  // Propagate downward to land, stop at water
-  // Multi-source BFS from non-water tiles with assigned heights
-  const q: Array<[number, number]> = [];
-  each((x, y, c: any) => {
-    const i = idx(x, y);
-    if (rt(c) !== T.WATER && heights[i] > 0) q.push([x, y]);
-  });
-  while (q.length) {
-    const [cx, cy] = q.shift()!;
-    const ci = idx(cx, cy);
-    for (const d of DIRS) {
-      const nx = cx + d[0],
-        ny = cy + d[1];
-      if (!inBounds(nx, ny)) continue;
-      const ni = idx(nx, ny);
-      const nc = state.map[ni] as any;
-      if (!nc || rt(nc) === T.WATER) continue;
-      const target = Math.max(0, heights[ci] - 1);
-      if (target > heights[ni]) {
-        heights[ni] = target;
-        q.push([nx, ny]);
-      }
-    }
+  for (let i = 0; i < heights.length; i++) {
+    if (mountainGrow[i] > 0) heights[i] += mountainGrow[i];
   }
-  // Assign back to cells (water stays 0)
-  each((x, y, c: any) => {
-    const i = idx(x, y);
-    // Normalize: all land sits at least 1 above water
-    c.h = rt(c) === T.WATER ? 0 : Math.max(1, heights[i] | 0);
-  });
+
+  // Step 2: for each mountain tile, increase all surrounding tiles (8-dir)
+  // to at least mountainHeight - 1, skipping water tiles (water must stay 0)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c || rt(c) !== T.MOUNTAIN) continue;
+      const mH = heights[i] | 0;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx,
+          ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const ni = I(nx, ny);
+        const nc = state.map[ni] as any;
+        if (!nc || rt(nc) === T.WATER) continue; // keep water at 0
+        heights[ni] = Math.max(heights[ni], Math.max(1, mH - 1));
+      }
+    }
+
+  // Assign back to cells (water stays 0, land at least 1)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c) continue;
+      c.h = rt(c) === T.WATER ? 0 : Math.max(1, heights[i] | 0);
+    }
 }
 
 function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
@@ -1542,23 +1515,57 @@ function recomputeSeedFromMap() {
       const t = rt(c);
       let code = 0;
       switch (t) {
-        case T.WATER: code = 0; break;
-        case T.GRASS: code = 1; break;
-        case T.FOREST: code = 2; break;
-        case T.HILL: code = 3; break;
-        case T.MOUNTAIN: code = 4; break;
-        case T.FARM: code = 5; break;
-        case T.MINE: code = 6; break;
-        case T.HUT: code = 7; break;
-        case T.HOUSE: code = 8; break;
-        case T.MANSION: code = 9; break;
-        case T.PALACE: code = 10; break;
-        case T.CASTLE: code = 11; break;
-        case T.BURNT: code = 12; break;
-        case T.RUBBLE: code = 13; break;
-        case T.DOCK: code = 14; break;
-        case T.TOWN: code = 15; break;
-        default: code = 31; break;
+        case T.WATER:
+          code = 0;
+          break;
+        case T.GRASS:
+          code = 1;
+          break;
+        case T.FOREST:
+          code = 2;
+          break;
+        case T.HILL:
+          code = 3;
+          break;
+        case T.MOUNTAIN:
+          code = 4;
+          break;
+        case T.FARM:
+          code = 5;
+          break;
+        case T.MINE:
+          code = 6;
+          break;
+        case T.HUT:
+          code = 7;
+          break;
+        case T.HOUSE:
+          code = 8;
+          break;
+        case T.MANSION:
+          code = 9;
+          break;
+        case T.PALACE:
+          code = 10;
+          break;
+        case T.CASTLE:
+          code = 11;
+          break;
+        case T.BURNT:
+          code = 12;
+          break;
+        case T.RUBBLE:
+          code = 13;
+          break;
+        case T.DOCK:
+          code = 14;
+          break;
+        case T.TOWN:
+          code = 15;
+          break;
+        default:
+          code = 31;
+          break;
       }
       mix(code);
       // Include height (clamped small int)
@@ -1574,23 +1581,57 @@ function recomputeSeedFromMap() {
         const to = c.upg.to;
         let toCode = 0;
         switch (to) {
-          case T.WATER: toCode = 0; break;
-          case T.GRASS: toCode = 1; break;
-          case T.FOREST: toCode = 2; break;
-          case T.HILL: toCode = 3; break;
-          case T.MOUNTAIN: toCode = 4; break;
-          case T.FARM: toCode = 5; break;
-          case T.MINE: toCode = 6; break;
-          case T.HUT: toCode = 7; break;
-          case T.HOUSE: toCode = 8; break;
-          case T.MANSION: toCode = 9; break;
-          case T.PALACE: toCode = 10; break;
-          case T.CASTLE: toCode = 11; break;
-          case T.BURNT: toCode = 12; break;
-          case T.RUBBLE: toCode = 13; break;
-          case T.DOCK: toCode = 14; break;
-          case T.TOWN: toCode = 15; break;
-          default: toCode = 31; break;
+          case T.WATER:
+            toCode = 0;
+            break;
+          case T.GRASS:
+            toCode = 1;
+            break;
+          case T.FOREST:
+            toCode = 2;
+            break;
+          case T.HILL:
+            toCode = 3;
+            break;
+          case T.MOUNTAIN:
+            toCode = 4;
+            break;
+          case T.FARM:
+            toCode = 5;
+            break;
+          case T.MINE:
+            toCode = 6;
+            break;
+          case T.HUT:
+            toCode = 7;
+            break;
+          case T.HOUSE:
+            toCode = 8;
+            break;
+          case T.MANSION:
+            toCode = 9;
+            break;
+          case T.PALACE:
+            toCode = 10;
+            break;
+          case T.CASTLE:
+            toCode = 11;
+            break;
+          case T.BURNT:
+            toCode = 12;
+            break;
+          case T.RUBBLE:
+            toCode = 13;
+            break;
+          case T.DOCK:
+            toCode = 14;
+            break;
+          case T.TOWN:
+            toCode = 15;
+            break;
+          default:
+            toCode = 31;
+            break;
         }
         mix(0x9 as number);
         mix(toCode);
