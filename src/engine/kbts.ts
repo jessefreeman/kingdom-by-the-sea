@@ -172,31 +172,42 @@ function houseNearby(x: number, y: number) {
 function debugDump() {
   const W = state.size.w,
     H = state.size.h;
-  const toId = (t: string | null) => {
-    if (!t) return "??";
-    // short ID from LABEL or first 2 letters
-    return LABEL[t] || t.slice(0, 2).toUpperCase();
+  // Build Markdown table with row/col headers; cell shows letter+height (e.g., G2, W0)
+  const letterOf = (t: string | null): string => {
+    if (!t) return "?";
+    // Prefer LABEL single-letter, else first letter uppercase
+    const lbl = LABEL[t];
+    if (lbl && lbl.length === 1) return lbl;
+    if (t === T.WATER) return "W";
+    const first = lbl ? lbl[0] : t && t.length ? t[0] : "?";
+    return String(first).toUpperCase();
   };
-  const tiles: string[] = [];
-  const heights: string[] = [];
+  const header = [" ", ...Array.from({ length: W }, (_, i) => String(i))].join(
+    " | "
+  );
+  const sep = Array(W + 1)
+    .fill("---")
+    .join(" | ");
+  const lines: string[] = [];
+  lines.push(`| ${header} |`);
+  lines.push(`| ${sep} |`);
   for (let y = 0; y < H; y++) {
-    let rowT: string[] = [],
-      rowH: string[] = [];
+    const cells: string[] = [];
     for (let x = 0; x < W; x++) {
       const c = state.map[idx(x, y)] as any;
       const t = rt(c);
-      rowT.push(toId(t));
-      rowH.push(String(c?.h | 0));
+      const h = c?.h | 0;
+      cells.push(`${letterOf(t)}${h}`);
     }
-    tiles.push(rowT.join(" "));
-    heights.push(rowH.join(" "));
+    lines.push(`| ${y} | ${cells.join(" | ")} |`);
   }
-  console.log("KBTS DEBUG DUMP");
-  console.log("seed:", state.seed);
-  console.log("map (ids):");
-  tiles.forEach((r) => console.log(r));
-  console.log("heights:");
-  heights.forEach((r) => console.log(r));
+  const out = [
+    "KBTS DEBUG DUMP",
+    `seed: ${state.seed}`,
+    `size: ${W}x${H}`,
+    lines.join("\n"),
+  ].join("\n");
+  console.log(out);
 }
 
 // Bind K to dump
@@ -1516,6 +1527,60 @@ function computeHeightMap() {
         if ((heights[i] | 0) < required) heights[i] = required;
       }
     }
+
+  // Step 4: iterate to fixpoint combining dominance and neighbor raise to ensure tiers
+  let changed = true;
+  let guard = 0;
+  while (changed && guard++ < W * H * 4) {
+    changed = false;
+    // Enforce mountain > non-mountain neighbors + 1
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = I(x, y);
+        const c = state.map[i] as any;
+        if (!c || rt(c) !== T.MOUNTAIN) continue;
+        let maxNeighbor = -Infinity;
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx,
+            ny = y + dy;
+          if (!inBounds(nx, ny)) continue;
+          const ni = I(nx, ny);
+          const nc = state.map[ni] as any;
+          if (!nc) continue;
+          const nt = rt(nc);
+          if (nt === T.MOUNTAIN) continue;
+          maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
+        }
+        if (maxNeighbor > -Infinity) {
+          const required = (maxNeighbor | 0) + 1;
+          if ((heights[i] | 0) < required) {
+            heights[i] = required;
+            changed = true;
+          }
+        }
+      }
+    // Raise neighbors to at least H-1 (non-water)
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = I(x, y);
+        const c = state.map[i] as any;
+        if (!c || rt(c) !== T.MOUNTAIN) continue;
+        const mH = heights[i] | 0;
+        for (const [dx, dy] of DIRS8) {
+          const nx = x + dx,
+            ny = y + dy;
+          if (!inBounds(nx, ny)) continue;
+          const ni = I(nx, ny);
+          const nc = state.map[ni] as any;
+          if (!nc || rt(nc) === T.WATER) continue;
+          const target = Math.max(1, mH - 1);
+          if ((heights[ni] | 0) < target) {
+            heights[ni] = target;
+            changed = true;
+          }
+        }
+      }
+  }
 
   // Assign back to cells (water stays 0, land at least 1)
   for (let y = 0; y < H; y++)
