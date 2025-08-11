@@ -52,8 +52,7 @@
   </div>
 
   <script type="module" src="/src/main.ts"></script>
-  <!-- legacy renderer + tests can remain during migration; main game now runs from TS engine -->
-  <script src="/js/renderer.js?v=dev"></script>
-  <script src="/js/game.tests.js?v=dev"></script>
+  <!-- TS test harness (browser-run) -->
+  <script type="module" src="/src/tests/game.tests.ts"></script>
 </body>
 </html>
