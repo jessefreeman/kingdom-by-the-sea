@@ -1461,6 +1461,30 @@ function computeHeightMap() {
       }
     }
 
+  // Step 3: enforce mountain dominance over non-mountain neighbors (8-dir)
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      const i = I(x, y);
+      const c = state.map[i] as any;
+      if (!c || rt(c) !== T.MOUNTAIN) continue;
+      let maxNeighbor = -Infinity;
+      for (const [dx, dy] of DIRS8) {
+        const nx = x + dx,
+          ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const ni = I(nx, ny);
+        const nc = state.map[ni] as any;
+        if (!nc) continue;
+        const nt = rt(nc);
+        if (nt === T.MOUNTAIN) continue; // only non-mountain neighbors
+        maxNeighbor = Math.max(maxNeighbor, heights[ni] | 0);
+      }
+      if (maxNeighbor > -Infinity) {
+        const required = (maxNeighbor | 0) + 1;
+        if ((heights[i] | 0) < required) heights[i] = required;
+      }
+    }
+
   // Assign back to cells (water stays 0, land at least 1)
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
