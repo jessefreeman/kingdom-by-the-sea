@@ -352,11 +352,36 @@ async function generate(
     const v = 0.6 - Math.hypot(x - cx, y - cy) / maxR + (worldGenRng!() * 0.35 - 0.15);
     c.type = v > 0 ? T.GRASS : T.WATER;
   });
+  
+  // Create coastal border - ensure no land tiles touch map edges
+  // Add a 1-tile coastal water border around the entire map
+  for (let x = 0; x < state.size.w; x++) {
+    for (let y = 0; y < state.size.h; y++) {
+      const isEdge = x === 0 || x === state.size.w - 1 || y === 0 || y === state.size.h - 1;
+      const isNearEdge = x <= 1 || x >= state.size.w - 2 || y <= 1 || y >= state.size.h - 2;
+      
+      if (isEdge) {
+        // Map edges are always deep water
+        (state.map[idx(x, y)] as any).type = T.WATER;
+      } else if (isNearEdge) {
+        // One tile in from edges should be water (creates coastal buffer)
+        const c = state.map[idx(x, y)] as any;
+        if (c.type !== T.WATER) {
+          // Convert land near edges to water, but keep some variation
+          if (worldGenRng!() < 0.7) {
+            c.type = T.WATER;
+          }
+        }
+      }
+    }
+  }
+  
   const L: Array<{ x: number; y: number }> = [];
   const n = Math.max(4, Math.floor((state.size.w * state.size.h) / 12));
   for (let i = 0; i < n; i++) {
-    const x = 1 + Math.floor(worldGenRng!() * (state.size.w - 2)),
-      y = 1 + Math.floor(worldGenRng!() * (state.size.h - 2));
+    // Keep resource points away from edges (minimum 2 tiles from border)
+    const x = 2 + Math.floor(worldGenRng!() * (state.size.w - 4)),
+      y = 2 + Math.floor(worldGenRng!() * (state.size.h - 4));
     if ((state.map[idx(x, y)] as any).type !== T.WATER) L.push({ x, y });
   }
   each((x, y, c: any) => {
@@ -379,7 +404,10 @@ async function generate(
   }
   const gs: Array<{ x: number; y: number }> = [];
   each((x, y, c: any) => {
-    if (c.type === T.GRASS) gs.push({ x, y });
+    // Only consider grass tiles that are at least 2 tiles from map edges
+    if (c.type === T.GRASS && x >= 2 && x < state.size.w - 2 && y >= 2 && y < state.size.h - 2) {
+      gs.push({ x, y });
+    }
   });
   const s = gs.sort(
     (a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)
