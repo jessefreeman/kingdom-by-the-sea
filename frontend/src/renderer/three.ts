@@ -245,21 +245,26 @@ class ThreeRenderer implements RendererInterface {
           
           // Convert to auto-tile types
           if (cellType === T.WATER) {
-            // Check if it's coast (adjacent to non-water)
+            // Check if it's coast (adjacent to land, not just any non-water)
             const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
             for (const [dx, dy] of dirs) {
               const nx = checkX + dx, ny = checkY + dy;
               if (inBounds(nx, ny)) {
                 const neighbor = state.map[idx(nx, ny)];
                 const neighborType = rt(neighbor);
+                // Coast is water adjacent to land (grass, forest, mountain, etc.) - not other water
                 if (neighborType && neighborType !== T.WATER) {
                   return "coast"; // This water tile is coastal
                 }
+              } else {
+                // Out of bounds is considered land for coastal determination
+                return "coast";
               }
             }
             return "water"; // Deep water
           }
           
+          // For land tiles, return the actual type
           return cellType;
         };
         
@@ -1405,10 +1410,16 @@ class ThreeRenderer implements RendererInterface {
               ny = y + dy;
             if (inBounds(nx, ny)) {
               const neighbor = state.map[idx(nx, ny)];
-              if (neighbor && rt(neighbor) !== T.WATER) {
+              const neighborType = rt(neighbor);
+              // Coast is water adjacent to land (not other water)
+              if (neighborType && neighborType !== T.WATER) {
                 isCoast = true;
                 break;
               }
+            } else {
+              // Out of bounds is considered land for coastal determination
+              isCoast = true;
+              break;
             }
           }
           

@@ -107,15 +107,16 @@ export class WaterAutoTiler extends AutoTiler {
     const currentTile = getTileType(x, y);
     
     if (currentTile === 'coast') {
-      // Shallow water/coast - connects to water and creates beach edges against land
-      return this.calculateAutoTile(x, y, getTileType, 'coast', ['water', 'coast']);
+      // Shallow water/coast - should connect to LAND tiles to form beach edges
+      // This creates the proper water-to-land transition
+      return this.calculateAutoTile(x, y, getTileType, 'coast', ['grass', 'forest', 'mountain', 'building', 'farm']);
     }
     
     // For deep water, return isolated tile (no auto-tiling needed)
     return {
-      tileIndex: 13,
-      uvX: this.getTileUV(13).x,
-      uvY: this.getTileUV(13).y
+      tileIndex: 5, // Changed from 13 to 5 to match the new sprite ordering
+      uvX: this.getTileUV(5).x,
+      uvY: this.getTileUV(5).y
     };
   }
 }
