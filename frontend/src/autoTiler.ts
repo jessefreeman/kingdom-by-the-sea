@@ -161,15 +161,12 @@ export class WaterAutoTiler extends AutoTiler {
   ): AutoTileResult {
     const currentTile = getTileType(x, y);
     
-    if (currentTile === 'water') {
-      // Deep water - connects to other water tiles and coast
-      return this.calculateAutoTile(x, y, getTileType, 'water', ['water', 'coast']);
-    } else if (currentTile === 'coast') {
+    if (currentTile === 'coast') {
       // Shallow water/coast - connects to water and creates beach edges against land
       return this.calculateAutoTile(x, y, getTileType, 'coast', ['water', 'coast']);
     }
     
-    // Fallback to isolated tile
+    // For deep water, return isolated tile (no auto-tiling needed)
     return {
       tileIndex: 13,
       uvX: this.getTileUV(13).x,

@@ -231,9 +231,8 @@ class ThreeRenderer implements RendererInterface {
 
       let texture;
       
-      // Use auto-tiling for water tiles if position is provided
-      if ((tileType === T.WATER || atlasType === "coast" || atlasType === "water") && 
-          x !== undefined && y !== undefined) {
+      // Use auto-tiling only for coastal water tiles if position is provided
+      if (atlasType === "coast" && x !== undefined && y !== undefined) {
         
         // Create helper function to get tile type at position
         const getTileType = (checkX: number, checkY: number): string | null => {
@@ -1392,7 +1391,7 @@ class ThreeRenderer implements RendererInterface {
         const rt = (c: any) => (c ? (c.upg ? c.upg.to : c.type) : null);
         const t = rt(cell);
 
-        // Check if coast
+        // Check if coast (only needed for water tiles)
         let isCoast = false;
         if (t === T.WATER) {
           const dirs = [
@@ -1411,6 +1410,11 @@ class ThreeRenderer implements RendererInterface {
                 break;
               }
             }
+          }
+          
+          // Skip deep water tiles - they're handled by the background plane
+          if (!isCoast) {
+            continue;
           }
         }
 
