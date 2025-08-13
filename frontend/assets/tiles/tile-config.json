@@ -1,0 +1,154 @@
+{
+    "metadata": {
+        "version": "1.0.0",
+        "atlasSize": 128,
+        "tileSize": 16,
+        "columns": 8,
+        "rows": 8,
+        "description": "Kingdom by the Sea tile configuration for runtime atlas generation"
+    },
+    "tiles": {
+        "burnt": {
+            "uid": "tile_burnt",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 0,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Charred ground from fire damage - placeholder: solid black"
+        },
+        "water": {
+            "uid": "tile_water",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 1,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Deep ocean water - placeholder: 'D' letter"
+        },
+        "coast": {
+            "uid": "tile_coast",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 2,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Shallow coastal water for dock placement - placeholder: 'W' letter"
+        },
+        "grass": {
+            "uid": "tile_grass",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 3,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Base grassland terrain - placeholder: 'G' letter"
+        },
+        "forest": {
+            "uid": "tile_forest",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 4,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Dense woodland that produces wood when cleared - placeholder: 'T' letter"
+        },
+        "mountain": {
+            "uid": "tile_mountain",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 5,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Rocky terrain for mine placement - placeholder: 'M' letter"
+        },
+        "building": {
+            "uid": "tile_building",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 6,
+            "atlasRow": 0,
+            "tileType": "structure",
+            "description": "Multi-use building foundation - placeholder: 'H' letter"
+        },
+        "farm": {
+            "uid": "tile_farm",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 7,
+            "atlasRow": 0,
+            "tileType": "structure",
+            "description": "Agricultural fields - placeholder: 'F' letter"
+        },
+        "rubble": {
+            "uid": "tile_rubble",
+            "path": "/assets/map-tiles.png",
+            "atlasColumn": 0,
+            "atlasRow": 1,
+            "tileType": "destroyed",
+            "description": "Destroyed building debris - using black placeholder for now"
+        }
+    },
+    "overlays": {
+        "worker": {
+            "uid": "overlay_worker",
+            "path": "/assets/tiles/worker.png",
+            "tileType": "overlay",
+            "description": "Farm worker sprite overlay - not implemented yet"
+        },
+        "construction": {
+            "uid": "overlay_construction",
+            "path": "/assets/tiles/construction.png",
+            "tileType": "overlay",
+            "description": "Building construction progress overlay - not implemented yet"
+        },
+        "hut": {
+            "uid": "overlay_hut",
+            "path": "/assets/tiles/hut.png",
+            "tileType": "overlay",
+            "description": "Hut building type overlay - uses building base for now"
+        },
+        "house": {
+            "uid": "overlay_house",
+            "path": "/assets/tiles/house.png",
+            "tileType": "overlay",
+            "description": "House building type overlay - uses building base for now"
+        },
+        "mansion": {
+            "uid": "overlay_mansion",
+            "path": "/assets/tiles/mansion.png",
+            "tileType": "overlay",
+            "description": "Mansion building type overlay - uses building base for now"
+        },
+        "palace": {
+            "uid": "overlay_palace",
+            "path": "/assets/tiles/palace.png",
+            "tileType": "overlay",
+            "description": "Palace building type overlay - uses building base for now"
+        },
+        "castle": {
+            "uid": "overlay_castle",
+            "path": "/assets/tiles/castle.png",
+            "tileType": "overlay",
+            "description": "Castle building type overlay - uses building base for now"
+        },
+        "mine": {
+            "uid": "overlay_mine",
+            "path": "/assets/tiles/mine.png",
+            "tileType": "overlay",
+            "description": "Mine structure overlay for mountains - uses mountain base for now"
+        },
+        "dock": {
+            "uid": "overlay_dock",
+            "path": "/assets/tiles/dock.png",
+            "tileType": "overlay",
+            "description": "Dock structure overlay for coast - uses coast base for now"
+        }
+    },
+    "effects": {
+        "selection": {
+            "uid": "effect_selection",
+            "path": "/assets/tiles/selection.png",
+            "tileType": "effect",
+            "description": "Selection border highlight - programmatic overlay"
+        },
+        "farmSynergy": {
+            "uid": "effect_farm_synergy",
+            "path": "/assets/tiles/farm-synergy.png",
+            "tileType": "effect",
+            "description": "Farm adjacency bonus glow effect - programmatic overlay"
+        }
+    }
+}

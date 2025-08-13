@@ -1,5 +1,7 @@
-// Tile Atlas System for Kingdom by the Sea
-// Handles loading and managing the 128x128 PNG tile atlas with 16x16 tiles
+// Updated Tile Atlas System for Kingdom by the Sea
+// Now uses preloaded individual textures combined into runtime atlas
+
+import { tileAtlasPreloader, type AtlasPosition } from './tileAtlasPreloader';
 
 export interface TilePosition {
   x: number;
@@ -8,145 +10,166 @@ export interface TilePosition {
   height: number;
 }
 
-// Tile atlas layout: 8x8 grid of 16x16 tiles
-// Row 0: Solid colors (for debugging)
-// Row 1: Letters on colors (for development)
-// Row 2: Final tile graphics with fog overlay
 export class TileAtlas {
-  private image: HTMLImageElement | null = null;
-  private canvas: HTMLCanvasElement | null = null;
-  private ctx: CanvasRenderingContext2D | null = null;
+  private atlas: HTMLCanvasElement | null = null;
   private loaded = false;
 
-  // Tile mapping based on your description:
-  // Column 0: Black, 1: Deep water (D), 2: Coastal water (W), 3: Grass (G)
-  // Column 4: Trees/Forest (T), 5: Mountains (M), 6: Buildings/Houses (H), 7: Farm (F)
-  private tileMapping: Record<string, { col: number; hasLetter: boolean }> = {
-    'black': { col: 0, hasLetter: false },
-    'water': { col: 1, hasLetter: true }, // Deep water with 'D'
-    'coast': { col: 2, hasLetter: true }, // Coastal water with 'W'
-    'grass': { col: 3, hasLetter: true }, // Grass with 'G'
-    'forest': { col: 4, hasLetter: true }, // Trees with 'T'
-    'mountain': { col: 5, hasLetter: true }, // Mountains with 'M'
-    'hill': { col: 5, hasLetter: true }, // Hills use mountain tiles with 'M'
-    'hut': { col: 6, hasLetter: true }, // Buildings with 'H'
-    'house': { col: 6, hasLetter: true },
-    'mansion': { col: 6, hasLetter: true },
-    'palace': { col: 6, hasLetter: true },
-    'castle': { col: 6, hasLetter: true },
-    'farm': { col: 7, hasLetter: true }, // Farm with 'F'
-    'mine': { col: 5, hasLetter: true }, // Mines use mountain tiles
-    'dock': { col: 2, hasLetter: true }, // Docks use coastal water with 'D'
-    'town': { col: 6, hasLetter: true }, // Towns use building tiles
-    'burnt': { col: 0, hasLetter: false }, // Black tiles
-    'rubble': { col: 0, hasLetter: false } // Black tiles
+  // Updated tile mapping to use the new system
+  private tileMapping: Record<string, string> = {
+    'black': 'burnt',
+    'water': 'water',
+    'coast': 'coast', 
+    'grass': 'grass',
+    'forest': 'forest',
+    'mountain': 'mountain',
+    'hill': 'mountain', // Hills use mountain tiles
+    'hut': 'building',
+    'house': 'building',
+    'mansion': 'building',
+    'palace': 'building', 
+    'castle': 'building',
+    'farm': 'farm',
+    'mine': 'mountain', // Mines use mountain base + overlay
+    'dock': 'coast', // Docks use coast base + overlay
+    'town': 'building',
+    'burnt': 'burnt',
+    'rubble': 'rubble'
   };
 
   async load(path: string = '/assets/map-tiles.png'): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.image = new Image();
-      this.image.onload = () => {
-        this.loaded = true;
-        this.setupCanvas();
-        resolve();
-      };
-      this.image.onerror = () => {
-        reject(new Error(`Failed to load tile atlas: ${path}`));
-      };
-      this.image.src = path;
-    });
-  }
-
-  private setupCanvas(): void {
-    // Create a working canvas for tile extraction
-    this.canvas = document.createElement('canvas');
-    this.canvas.width = 16;
-    this.canvas.height = 16;
-    this.ctx = this.canvas.getContext('2d');
+    // Use the preloader system instead of direct image loading
+    this.atlas = await tileAtlasPreloader.loadAndBuildAtlas();
+    this.loaded = true;
   }
 
   getTilePosition(tileType: string, useLetters: boolean = true, useFog: boolean = false): TilePosition {
-    const mapping = this.tileMapping[tileType] || this.tileMapping['black']!;
-    const col = mapping.col;
+    const mappedTile = this.tileMapping[tileType] || 'burnt';
+    const position = tileAtlasPreloader.getTilePosition(mappedTile);
     
-    // Determine row based on mode
-    let row = 0; // Default to solid colors
-    if (useFog) {
-      row = 2; // Fog layer
-    } else if (useLetters && mapping.hasLetter) {
-      row = 1; // Letter layer
+    if (!position) {
+      // Fallback to burnt tile (column 0)
+      return { x: 0, y: 0, width: 16, height: 16 };
     }
 
-    return {
-      x: col * 16,
-      y: row * 16,
-      width: 16,
-      height: 16
-    };
+    return position;
   }
 
-  // Extract a tile as canvas texture (for 2D rendering)
+  // Extract a tile as canvas texture (for 2D rendering) with optional fog shading
   getTileCanvas(tileType: string, useLetters: boolean = true, useFog: boolean = false): HTMLCanvasElement | null {
-    if (!this.loaded || !this.image || !this.canvas || !this.ctx) return null;
+    if (!this.loaded || !this.atlas) return null;
 
-    const pos = this.getTilePosition(tileType, useLetters, useFog);
+    const mappedTile = this.tileMapping[tileType] || 'burnt';
+    let canvas = tileAtlasPreloader.getTileCanvas(mappedTile);
     
-    // Clear the working canvas
-    this.ctx.clearRect(0, 0, 16, 16);
+    // Apply fog of war shading programmatically
+    if (useFog && canvas) {
+      canvas = this.applyFogShadingToCanvas(canvas);
+    }
     
-    // Draw the tile from the atlas
-    this.ctx.drawImage(
-      this.image,
-      pos.x, pos.y, pos.width, pos.height, // Source
-      0, 0, 16, 16 // Destination
-    );
-
-    // Return a copy of the canvas
-    const resultCanvas = document.createElement('canvas');
-    resultCanvas.width = 16;
-    resultCanvas.height = 16;
-    const resultCtx = resultCanvas.getContext('2d')!;
-    resultCtx.drawImage(this.canvas, 0, 0);
-    
-    return resultCanvas;
+    return canvas;
   }
 
-  // Create a Three.js texture from a tile
+  // Apply fog of war shading to a canvas
+  private applyFogShadingToCanvas(sourceCanvas: HTMLCanvasElement): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceCanvas.width;
+    canvas.height = sourceCanvas.height;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Draw the original tile
+    ctx.drawImage(sourceCanvas, 0, 0);
+    
+    // Apply fog overlay - dark semi-transparent overlay
+    ctx.fillStyle = 'rgba(10, 13, 26, 0.8)'; // Dark blue-black fog
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    return canvas;
+  }
+
+  // Create a Three.js texture from a specific tile with optional fog shading
   getThreeTexture(tileType: string, useLetters: boolean = true, useFog: boolean = false): any {
     if (!window.THREE) return null;
     
-    const canvas = this.getTileCanvas(tileType, useLetters, useFog);
-    if (!canvas) return null;
-
-    const texture = new (window.THREE as any).CanvasTexture(canvas);
-    texture.magFilter = (window.THREE as any).NearestFilter; // Pixel art style
-    texture.minFilter = (window.THREE as any).NearestFilter;
+    const mappedTile = this.tileMapping[tileType] || 'burnt';
+    let texture = tileAtlasPreloader.getTileThreeTexture(mappedTile);
+    
+    // Apply fog of war shading programmatically
+    if (useFog && texture) {
+      texture = this.applyFogShading(texture);
+    }
+    
     return texture;
   }
 
-  // Helper to get canvas data for direct manipulation
-  getTileImageData(tileType: string, useLetters: boolean = true, useFog: boolean = false): ImageData | null {
-    if (!this.loaded || !this.image || !this.canvas || !this.ctx) return null;
-
-    const pos = this.getTilePosition(tileType, useLetters, useFog);
+  // Apply fog of war shading to a Three.js texture
+  private applyFogShading(texture: any): any {
+    if (!window.THREE) return texture;
     
-    // Clear and draw tile
-    this.ctx.clearRect(0, 0, 16, 16);
-    this.ctx.drawImage(
-      this.image,
-      pos.x, pos.y, pos.width, pos.height,
-      0, 0, 16, 16
-    );
+    const THREE = window.THREE;
+    
+    // Create a darker version of the texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 16;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Draw the original texture to canvas
+    const img = texture.image || texture.source?.data;
+    if (img) {
+      ctx.drawImage(img, 0, 0, 16, 16);
+      
+      // Apply fog overlay - dark semi-transparent overlay
+      ctx.fillStyle = 'rgba(10, 13, 26, 0.8)'; // Dark blue-black fog
+      ctx.fillRect(0, 0, 16, 16);
+      
+      // Create new texture from fogged canvas
+      const foggedTexture = new THREE.CanvasTexture(canvas);
+      foggedTexture.magFilter = THREE.NearestFilter;
+      foggedTexture.minFilter = THREE.NearestFilter;
+      return foggedTexture;
+    }
+    
+    return texture;
+  }
 
-    return this.ctx.getImageData(0, 0, 16, 16);
+  // Get overlay image for building types, workers, etc.
+  getOverlayImage(overlayType: string): HTMLImageElement | null {
+    return tileAtlasPreloader.getOverlayImage(overlayType);
+  }
+
+  // Get building overlay based on building type
+  getBuildingOverlay(buildingType: string): HTMLImageElement | null {
+    const overlayType = buildingType.toLowerCase();
+    return this.getOverlayImage(overlayType);
+  }
+
+  // Helper to get canvas data for direct manipulation with optional fog shading
+  getTileImageData(tileType: string, useLetters: boolean = true, useFog: boolean = false): ImageData | null {
+    const canvas = this.getTileCanvas(tileType, useLetters, useFog);
+    if (!canvas) return null;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
   isLoaded(): boolean {
     return this.loaded;
   }
 
-  getImage(): HTMLImageElement | null {
-    return this.image;
+  getImage(): HTMLCanvasElement | null {
+    return this.atlas;
+  }
+
+  // Get the full atlas for rendering
+  getAtlas(): HTMLCanvasElement | null {
+    return this.atlas;
+  }
+
+  // Get atlas-wide Three.js texture (for efficient batch rendering)
+  getAtlasThreeTexture(): any {
+    return tileAtlasPreloader.getThreeTexture();
   }
 }
 
