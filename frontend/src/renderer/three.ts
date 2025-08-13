@@ -209,10 +209,12 @@ class ThreeRenderer implements RendererInterface {
     isDiscovered = true,
     isSelected = false,
     label = "",
-    hasSynergy = false
+    hasSynergy = false,
+    x?: number,
+    y?: number
   ): any {
     const K = (window as any).KBTS;
-    const { T, C, LABEL } = K;
+    const { T, C, LABEL, state, idx, inBounds } = K;
     const THREE = window.THREE;
 
     // Determine the actual tile type for atlas lookup
@@ -227,7 +229,45 @@ class ThreeRenderer implements RendererInterface {
       // Water tiles should never have fog - always use row 2 (non-fogged)
       const useFog = tileType === T.WATER ? false : !isDiscovered;
 
-      const texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+      let texture;
+      
+      // Use auto-tiling for water tiles if position is provided
+      if ((tileType === T.WATER || atlasType === "coast" || atlasType === "water") && 
+          x !== undefined && y !== undefined) {
+        
+        // Create helper function to get tile type at position
+        const getTileType = (checkX: number, checkY: number): string | null => {
+          if (!inBounds(checkX, checkY)) return null;
+          const cell = state.map[idx(checkX, checkY)];
+          if (!cell) return null;
+          
+          const rt = (c: any) => (c ? (c.upg ? c.upg.to : c.type) : null);
+          const cellType = rt(cell);
+          
+          // Convert to auto-tile types
+          if (cellType === T.WATER) {
+            // Check if it's coast (adjacent to non-water)
+            const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
+            for (const [dx, dy] of dirs) {
+              const nx = checkX + dx, ny = checkY + dy;
+              if (inBounds(nx, ny)) {
+                const neighbor = state.map[idx(nx, ny)];
+                const neighborType = rt(neighbor);
+                if (neighborType && neighborType !== T.WATER) {
+                  return "coast"; // This water tile is coastal
+                }
+              }
+            }
+            return "water"; // Deep water
+          }
+          
+          return cellType;
+        };
+        
+        texture = tileAtlas.getWaterAutoTileTexture(x, y, getTileType, useFog);
+      } else {
+        texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+      }
       if (texture) {
         // If we have atlas texture, we might still need to add overlays
         if (isSelected || hasSynergy) {
@@ -1397,7 +1437,9 @@ class ThreeRenderer implements RendererInterface {
           isDiscoveredForTexture,
           isSelected,
           label,
-          hasSynergy
+          hasSynergy,
+          x,
+          y
         );
 
         // Create mesh

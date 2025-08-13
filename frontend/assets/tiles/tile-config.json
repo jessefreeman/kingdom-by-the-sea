@@ -22,7 +22,9 @@
             "atlasColumn": 0,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Deep ocean water - from auto-tiles-water.png tile id 0"
+            "autoTile": true,
+            "autoTileSize": 64,
+            "description": "Deep ocean water - from auto-tiles-water.png using auto-tiling"
         },
         "coast": {
             "uid": "tile_coast",
@@ -30,7 +32,9 @@
             "atlasColumn": 1,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Shallow coastal water for dock placement - from auto-tiles-water.png tile id 1"
+            "autoTile": true,
+            "autoTileSize": 64,
+            "description": "Shallow coastal water for dock placement - from auto-tiles-water.png using auto-tiling"
         },
         "grass": {
             "uid": "tile_grass",

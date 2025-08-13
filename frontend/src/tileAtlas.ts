@@ -1,7 +1,8 @@
 // Updated Tile Atlas System for Kingdom by the Sea
-// Now uses preloaded individual textures combined into runtime atlas
+// Now uses preloaded individual textures combined into runtime atlas with auto-tiling support
 
 import { tileAtlasPreloader, type AtlasPosition } from './tileAtlasPreloader';
+import { waterAutoTiler } from './autoTiler';
 
 export interface TilePosition {
   x: number;
@@ -86,12 +87,27 @@ export class TileAtlas {
     return canvas;
   }
 
-  // Create a Three.js texture from a specific tile with optional fog shading
-  getThreeTexture(tileType: string, useLetters: boolean = true, useFog: boolean = false): any {
+  // Create a Three.js texture from a specific tile with optional fog shading and auto-tiling
+  getThreeTexture(tileType: string, useLetters: boolean = true, useFog: boolean = false, 
+                  autoTileIndex?: number, getTileTypeFn?: (x: number, y: number) => string | null,
+                  x?: number, y?: number): any {
     if (!window.THREE) return null;
     
     const mappedTile = this.tileMapping[tileType] || 'burnt';
-    let texture = tileAtlasPreloader.getTileThreeTexture(mappedTile);
+    let texture;
+    
+    // Check if this is an auto-tile and we have the necessary parameters
+    if (tileAtlasPreloader.isAutoTile(mappedTile) && getTileTypeFn && x !== undefined && y !== undefined) {
+      // Calculate auto-tile index based on neighbors
+      const autoTileResult = waterAutoTiler.calculateWaterTile(x, y, getTileTypeFn);
+      texture = tileAtlasPreloader.getAutoTileThreeTexture(mappedTile, autoTileResult.tileIndex);
+    } else if (autoTileIndex !== undefined && tileAtlasPreloader.isAutoTile(mappedTile)) {
+      // Use provided auto-tile index
+      texture = tileAtlasPreloader.getAutoTileThreeTexture(mappedTile, autoTileIndex);
+    } else {
+      // Use regular tile
+      texture = tileAtlasPreloader.getTileThreeTexture(mappedTile);
+    }
     
     // Apply fog of war shading programmatically
     if (useFog && texture) {
@@ -99,6 +115,32 @@ export class TileAtlas {
     }
     
     return texture;
+  }
+
+  // Get auto-tile canvas for 2D rendering
+  getAutoTileCanvas(tileType: string, autoTileIndex: number, useFog: boolean = false): HTMLCanvasElement | null {
+    if (!this.loaded || !this.atlas) return null;
+
+    const mappedTile = this.tileMapping[tileType] || 'burnt';
+    let canvas = tileAtlasPreloader.getAutoTileCanvas(mappedTile, autoTileIndex);
+    
+    // Apply fog of war shading programmatically
+    if (useFog && canvas) {
+      canvas = this.applyFogShadingToCanvas(canvas);
+    }
+    
+    return canvas;
+  }
+
+  // Calculate and get auto-tile texture based on neighbors (for water tiles)
+  getWaterAutoTileTexture(x: number, y: number, getTileTypeFn: (x: number, y: number) => string | null, 
+                         useFog: boolean = false): any {
+    const currentTileType = getTileTypeFn(x, y);
+    if (!currentTileType || (!currentTileType.includes('water') && currentTileType !== 'coast')) {
+      return this.getThreeTexture(currentTileType || 'water', true, useFog);
+    }
+    
+    return this.getThreeTexture(currentTileType, true, useFog, undefined, getTileTypeFn, x, y);
   }
 
   // Apply fog of war shading to a Three.js texture

@@ -8,6 +8,8 @@ export interface TileConfig {
   atlasRow?: number;
   tileType: 'terrain' | 'structure' | 'destroyed' | 'overlay' | 'effect';
   description: string;
+  autoTile?: boolean; // Flag for auto-tiling textures
+  autoTileSize?: number; // Size of auto-tile texture (default 64)
 }
 
 export interface TileConfigFile {
@@ -292,7 +294,46 @@ export class TileAtlasPreloader {
     return canvas;
   }
 
-  // Get Three.js texture for a specific tile
+  // Get Three.js texture for a specific auto-tile
+  getAutoTileThreeTexture(tileKey: string, autoTileIndex: number = 0): any {
+    if (!window.THREE) return null;
+    
+    const config = this.config?.tiles[tileKey];
+    if (!config || !config.autoTile) {
+      return this.getTileThreeTexture(tileKey);
+    }
+    
+    const sourceImage = this.sourceImages.get(config.path);
+    if (!sourceImage) return null;
+    
+    const THREE = window.THREE;
+    const tileSize = 16;
+    const gridSize = 4;
+    
+    // Calculate position in auto-tile grid
+    const col = autoTileIndex % gridSize;
+    const row = Math.floor(autoTileIndex / gridSize);
+    
+    // Create canvas for the specific auto-tile
+    const canvas = document.createElement('canvas');
+    canvas.width = tileSize;
+    canvas.height = tileSize;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Extract the specific tile from the auto-tile texture
+    ctx.drawImage(
+      sourceImage,
+      col * tileSize, row * tileSize, tileSize, tileSize, // source
+      0, 0, tileSize, tileSize // destination
+    );
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    return texture;
+  }
+
+  // Get Three.js texture for a specific tile (non-auto-tile)
   getTileThreeTexture(tileKey: string): any {
     if (!window.THREE) return null;
     
@@ -303,6 +344,45 @@ export class TileAtlasPreloader {
     texture.magFilter = (window.THREE as any).NearestFilter;
     texture.minFilter = (window.THREE as any).NearestFilter;
     return texture;
+  }
+
+  // Get canvas for a specific auto-tile
+  getAutoTileCanvas(tileKey: string, autoTileIndex: number = 0): HTMLCanvasElement | null {
+    const config = this.config?.tiles[tileKey];
+    if (!config || !config.autoTile) {
+      return this.getTileCanvas(tileKey);
+    }
+    
+    const sourceImage = this.sourceImages.get(config.path);
+    if (!sourceImage) return null;
+    
+    const tileSize = 16;
+    const gridSize = 4;
+    
+    // Calculate position in auto-tile grid
+    const col = autoTileIndex % gridSize;
+    const row = Math.floor(autoTileIndex / gridSize);
+    
+    // Create canvas for the specific auto-tile
+    const canvas = document.createElement('canvas');
+    canvas.width = tileSize;
+    canvas.height = tileSize;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Extract the specific tile from the auto-tile texture
+    ctx.drawImage(
+      sourceImage,
+      col * tileSize, row * tileSize, tileSize, tileSize, // source
+      0, 0, tileSize, tileSize // destination
+    );
+    
+    return canvas;
+  }
+
+  // Check if a tile uses auto-tiling
+  isAutoTile(tileKey: string): boolean {
+    const config = this.config?.tiles[tileKey];
+    return config?.autoTile === true;
   }
 }
 
