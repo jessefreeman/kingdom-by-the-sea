@@ -15,75 +15,9 @@ export interface AutoTileResult {
 
 export class AutoTiler {
   private config: AutoTileConfig;
-  private lookupTable: number[];
 
   constructor(config: AutoTileConfig = { textureSize: 64, tileSize: 16, gridSize: 4 }) {
     this.config = config;
-    this.lookupTable = this.generateLookupTable();
-  }
-
-  // Generate the 256-entry lookup table mapping bit patterns to tile indices
-  private generateLookupTable(): number[] {
-    const table = new Array(256);
-    
-    // Initialize all entries to isolated tile (index 13)
-    table.fill(13);
-    
-    // Define patterns for each tile index based on the template
-    // Using cardinal directions (N, E, S, W) as primary connections
-    
-    // Isolated tile (no connections)
-    table[0b00000000] = 13;
-    
-    // Single connections
-    table[0b00000001] = 1;  // North only - top edge
-    table[0b00000100] = 3;  // East only - right edge  
-    table[0b00010000] = 9;  // South only - bottom edge
-    table[0b01000000] = 4;  // West only - left edge
-    
-    // Opposite connections (straight lines)
-    table[0b00010001] = 12; // North + South - vertical line
-    table[0b01000100] = 11; // East + West - horizontal line
-    
-    // Adjacent connections (corners)
-    table[0b00000101] = 2;  // North + East - top-right corner
-    table[0b00010100] = 7;  // East + South - bottom-right corner
-    table[0b01010000] = 8;  // South + West - bottom-left corner
-    table[0b01000001] = 0;  // West + North - top-left corner
-    
-    // Three connections  
-    table[0b00010101] = 14; // North + East + South
-    table[0b01010100] = 14; // East + South + West  
-    table[0b01010001] = 14; // South + West + North
-    table[0b01000101] = 14; // West + North + East
-    
-    // Full connections
-    table[0b01010101] = 5;  // All cardinal directions
-    
-    // Add diagonal awareness for smoother transitions
-    for (let i = 0; i < 256; i++) {
-      const north = (i & 0b00000001) !== 0;
-      const northEast = (i & 0b00000010) !== 0;
-      const east = (i & 0b00000100) !== 0;
-      const southEast = (i & 0b00001000) !== 0;
-      const south = (i & 0b00010000) !== 0;
-      const southWest = (i & 0b00100000) !== 0;
-      const west = (i & 0b01000000) !== 0;
-      const northWest = (i & 0b10000000) !== 0;
-      
-      // If we have all four cardinal directions, check for inner corners
-      if (north && east && south && west) {
-        if (!northEast && !southEast && !southWest && !northWest) {
-          table[i] = 6; // Inner corners variant
-        } else if (!northEast || !southEast || !southWest || !northWest) {
-          table[i] = 10; // Partial inner corners
-        } else {
-          table[i] = 5; // Full connection
-        }
-      }
-    }
-    
-    return table;
   }
 
   // Calculate auto-tile index based on neighbors
@@ -119,7 +53,18 @@ export class AutoTiler {
       }
     }
     
-    const tileIndex = this.lookupTable[bitValue] || 13;
+    // Extract cardinal directions and calculate tile index directly
+    const north = (bitValue & 0b00000001) !== 0;  // bit 0
+    const east =  (bitValue & 0b00000100) !== 0;  // bit 2  
+    const south = (bitValue & 0b00010000) !== 0;  // bit 4
+    const west =  (bitValue & 0b01000000) !== 0;  // bit 6
+    
+    // Create 4-bit index that directly maps to sprite position
+    const tileIndex = (north ? 1 : 0) | 
+                     (east ? 2 : 0) | 
+                     (south ? 4 : 0) | 
+                     (west ? 8 : 0);
+    
     const uvCoords = this.getTileUV(tileIndex);
     
     return {
