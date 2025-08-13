@@ -18,19 +18,19 @@
         },
         "water": {
             "uid": "tile_water",
-            "path": "/assets/map-tiles.png",
-            "atlasColumn": 1,
+            "path": "/assets/auto-tiles-water.png",
+            "atlasColumn": 0,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Deep ocean water - placeholder: 'D' letter"
+            "description": "Deep ocean water - from auto-tiles-water.png tile id 0"
         },
         "coast": {
             "uid": "tile_coast",
-            "path": "/assets/map-tiles.png",
-            "atlasColumn": 2,
+            "path": "/assets/auto-tiles-water.png",
+            "atlasColumn": 1,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Shallow coastal water for dock placement - placeholder: 'W' letter"
+            "description": "Shallow coastal water for dock placement - from auto-tiles-water.png tile id 1"
         },
         "grass": {
             "uid": "tile_grass",

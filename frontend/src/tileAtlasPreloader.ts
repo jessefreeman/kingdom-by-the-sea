@@ -167,8 +167,98 @@ export class TileAtlasPreloader {
     return Array.from(this.overlayMap.keys());
   }
 
-  getConfig(): TileConfigFile | null {
-    return this.config;
+  // Debug method to display the generated atlas
+  showAtlasDebug(scale: number = 4): void {
+    if (!this.atlas) {
+      console.warn('Atlas not loaded yet');
+      return;
+    }
+
+    // Remove existing debug atlas if present
+    const existingDebug = document.getElementById('atlas-debug');
+    if (existingDebug) {
+      existingDebug.remove();
+    }
+
+    // Create debug overlay
+    const debugDiv = document.createElement('div');
+    debugDiv.id = 'atlas-debug';
+    debugDiv.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      color: white;
+      font-family: monospace;
+      font-size: 12px;
+    `;
+
+    // Create title
+    const title = document.createElement('div');
+    title.textContent = 'Generated Tile Atlas';
+    title.style.marginBottom = '5px';
+    debugDiv.appendChild(title);
+
+    // Create scaled canvas display
+    const displayCanvas = document.createElement('canvas');
+    const atlasSize = this.config?.metadata.atlasSize || 128;
+    displayCanvas.width = atlasSize * scale;
+    displayCanvas.height = atlasSize * scale;
+    displayCanvas.style.cssText = `
+      border: 1px solid #fff;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+    `;
+
+    const displayCtx = displayCanvas.getContext('2d')!;
+    displayCtx.imageSmoothingEnabled = false;
+    displayCtx.drawImage(this.atlas, 0, 0, atlasSize * scale, atlasSize * scale);
+
+    debugDiv.appendChild(displayCanvas);
+
+    // Add tile info
+    const info = document.createElement('div');
+    info.style.marginTop = '5px';
+    info.innerHTML = `
+      <div>Size: ${atlasSize}x${atlasSize}</div>
+      <div>Tiles: ${this.tileMap.size}</div>
+      <div>Overlays: ${this.overlayMap.size}</div>
+      <div>Scale: ${scale}x</div>
+      <div style="margin-top: 5px; font-size: 10px;">
+        Click to close
+      </div>
+    `;
+    debugDiv.appendChild(info);
+
+    // Add close functionality
+    debugDiv.addEventListener('click', () => {
+      debugDiv.remove();
+    });
+
+    document.body.appendChild(debugDiv);
+    console.log('Atlas debug display shown. Click to close.');
+  }
+
+  // Console method to log atlas information
+  logAtlasInfo(): void {
+    if (!this.config || !this.atlas) {
+      console.warn('Atlas not loaded yet');
+      return;
+    }
+
+    console.log('=== Tile Atlas Debug Info ===');
+    console.log('Config:', this.config.metadata);
+    console.log('Atlas canvas:', this.atlas);
+    console.log('Tile mappings:');
+    this.tileMap.forEach((position, key) => {
+      console.log(`  ${key}:`, position);
+    });
+    console.log('Loaded overlays:', Array.from(this.overlayMap.keys()));
+    console.log('Source images:', Array.from(this.sourceImages.keys()));
   }
 
   // Create a Three.js texture from the atlas

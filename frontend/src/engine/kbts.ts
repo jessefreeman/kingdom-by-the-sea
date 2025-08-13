@@ -703,6 +703,28 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
     e.preventDefault();
   }
 });
+// Atlas debug display (A key)
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.key === "a" || e.key === "A") {
+    import("../tileAtlasPreloader").then(module => {
+      module.tileAtlasPreloader.showAtlasDebug(6);
+    }).catch(err => {
+      console.warn("Could not load atlas preloader for debug:", err);
+    });
+    e.preventDefault();
+  }
+});
+// Atlas info to console (Shift+A)
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if ((e.key === "A") && e.shiftKey) {
+    import("../tileAtlasPreloader").then(module => {
+      module.tileAtlasPreloader.logAtlasInfo();
+    }).catch(err => {
+      console.warn("Could not load atlas preloader for debug:", err);
+    });
+    e.preventDefault();
+  }
+});
 
 // ===== Rules / UI =====
 const afford = (c: any) =>

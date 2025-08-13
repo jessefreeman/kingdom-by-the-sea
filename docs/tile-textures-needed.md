@@ -15,11 +15,17 @@ This document outlines the tile texture system using individual texture files th
 ✅ **Preloader System**: Built `src/tileAtlasPreloader.ts` for runtime atlas generation  
 ✅ **Updated TileAtlas**: Modified existing `src/tileAtlas.ts` to use new system
 ✅ **Integration**: System works with existing Three.js and debug renderers
+✅ **Debug Tools**: Added atlas visualization and info logging
 
-**Current Tile Mapping** (using existing map-tiles.png):
+**Debug Controls**:
+- Press `A` key: Show visual atlas debug overlay (6x scale)
+- Press `Shift+A`: Log atlas info to console
+- Press `F` key: Toggle fog of war
+
+**Current Tile Mapping** (using existing map-tiles.png + auto-tiles-water.png):
 - Column 0: Burnt land (black)
-- Column 1: Water (D letter)
-- Column 2: Coast (W letter) 
+- Column 1: Water (from auto-tiles-water.png tile 0)
+- Column 2: Coast (from auto-tiles-water.png tile 1) 
 - Column 3: Grass (G letter)
 - Column 4: Forest (T letter)
 - Column 5: Mountain (M letter)

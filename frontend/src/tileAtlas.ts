@@ -171,6 +171,15 @@ export class TileAtlas {
   getAtlasThreeTexture(): any {
     return tileAtlasPreloader.getThreeTexture();
   }
+
+  // Debug methods
+  showAtlasDebug(scale: number = 4): void {
+    tileAtlasPreloader.showAtlasDebug(scale);
+  }
+
+  logAtlasInfo(): void {
+    tileAtlasPreloader.logAtlasInfo();
+  }
 }
 
 // Global singleton instance
