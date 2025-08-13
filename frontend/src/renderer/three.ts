@@ -473,7 +473,7 @@ class ThreeRenderer implements RendererInterface {
 
     if (this.isRotating) {
       // Y-axis rotation only: horizontal rotation around map
-      this.cameraAngleY -= deltaX * 0.01; // Horizontal rotation around map
+      this.cameraAngleY += deltaX * 0.01; // Adjusted to ensure right drag rotates right
       // X-axis is now fixed - no tilt adjustment allowed
 
       this.updateCameraPosition();
@@ -802,6 +802,9 @@ class ThreeRenderer implements RendererInterface {
       // Only render if something has changed or we're actively moving
       if (this.needsRender || this.isDragging || this.isRotating || this.isAnimating) {
         if (this.renderer && this.scene && this.camera) {
+          // Update billboards to face camera
+          this.updateBillboards();
+          
           this.renderer.render(this.scene, this.camera);
         }
         this.needsRender = false;
@@ -809,6 +812,20 @@ class ThreeRenderer implements RendererInterface {
     };
 
     render();
+  }
+
+  private updateBillboards() {
+    if (!this.camera || !window.THREE) return;
+    
+    const THREE = window.THREE;
+    
+    // Update all billboards to face the camera
+    this.tileMeshes.forEach((mesh) => {
+      if (mesh.userData && mesh.userData.isBillboard) {
+        // Make the billboard face the camera
+        mesh.lookAt(this.camera.position);
+      }
+    });
   }
 
   private stopRenderLoop() {
@@ -1396,7 +1413,7 @@ class ThreeRenderer implements RendererInterface {
         const isWater = t === T.WATER;
         
         // Reduce height by 1 when forest is cleared to grass (trees removed)
-        if (cell.type === T.FOREST && cell.upg && cell.upg.to === T.GRASS) {
+        if (cell.type === K.T.FOREST && cell.upg && cell.upg.to === K.T.GRASS) {
           heightLevel = Math.max(0, heightLevel - 1);
         }
         
@@ -1411,6 +1428,35 @@ class ThreeRenderer implements RendererInterface {
 
         this.scene.add(mesh);
         this.tileMeshes.push(mesh);
+
+        // Add billboard sprite for forest tiles (camera-facing plane like old raycaster games)
+        if (t === T.FOREST && cell.disc && !this.isAnimating) {
+          // Get forest texture from row 2 (with F letter, no fog)
+          const forestBillboardTexture = tileAtlas.getThreeTexture("forest", true, false);
+          if (forestBillboardTexture) {
+            const billboardGeometry = new THREE.PlaneGeometry(0.8, 0.8); // Slightly smaller than tile
+            const billboardMaterial = new THREE.MeshBasicMaterial({
+              map: forestBillboardTexture,
+              transparent: true,
+              alphaTest: 0.1, // Discard pixels with low alpha for crisp edges
+            });
+            const billboard = new THREE.Mesh(billboardGeometry, billboardMaterial);
+            
+            // Position billboard above the tile
+            const billboardHeight = yPos + ThreeRenderer.HEIGHT_PER_LEVEL * 0.5 + 0.4;
+            billboard.position.set(
+              x - state.size.w / 2 + 0.5,
+              billboardHeight,
+              y - state.size.h / 2 + 0.5
+            );
+            
+            // Make billboard always face camera (this is updated in render loop)
+            billboard.userData = { isBillboard: true };
+            
+            this.scene.add(billboard);
+            this.tileMeshes.push(billboard);
+          }
+        }
 
         // Add textured side faces for raised tiles against lower neighbors
         // Skip side faces during animation for performance
@@ -1431,7 +1477,7 @@ class ThreeRenderer implements RendererInterface {
               let neighborHeight = nCell && nt !== T.WATER ? nCell.h | 0 : 0;
               
               // Apply same height reduction for cleared forests
-              if (nCell && nCell.type === T.FOREST && nCell.upg && nCell.upg.to === T.GRASS) {
+              if (nCell && nCell.type === K.T.FOREST && nCell.upg && nCell.upg.to === K.T.GRASS) {
                 neighborHeight = Math.max(0, neighborHeight - 1);
               }
               

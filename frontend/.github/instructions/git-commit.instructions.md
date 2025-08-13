@@ -4,7 +4,7 @@ applyTo: "**"
 
 # Commit Message Instructions
 
-Only give me commit messages when you have modified files. Follow these rules for all commits, including releases. Always give me the command for what I should commit. Don't attempt to execute it,I have to do it manually.
+Only give me commit messages when you have modified files. Follow these rules for all commits, including releases.
 
 ## Rules
 
