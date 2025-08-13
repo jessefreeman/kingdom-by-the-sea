@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wang Tile Template Generator - Kingdom by the Sea</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+        }
+        
+        .section h2 {
+            color: #34495e;
+            margin-top: 0;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 80px);
+            gap: 2px;
+            margin: 20px 0;
+            justify-content: center;
+        }
+        
+        .tile {
+            width: 80px;
+            height: 80px;
+            border: 1px solid #bdc3c7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            position: relative;
+            background: #ecf0f1;
+        }
+        
+        .tile-number {
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        
+        .tile-pattern {
+            font-size: 10px;
+            text-align: center;
+            line-height: 1.2;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #2980b9;
+        }
+        
+        input[type="file"] {
+            padding: 8px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+        }
+        
+        .canvas-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        canvas {
+            border: 2px solid #34495e;
+            image-rendering: pixelated;
+        }
+        
+        .description {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #3498db;
+        }
+        
+        .pattern-explanation {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .pattern-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .download-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌊 Wang Tile Template Generator</h1>
+        
+        <div class="description">
+            <strong>What is this?</strong> This tool generates a Wang tile template for auto-tiling systems. 
+            Wang tiles use edge patterns to seamlessly connect adjacent tiles. Each tile has connections 
+            on its North, East, South, and West edges.
+        </div>
+        
+        <div class="section">
+            <h2>Generated Template (128x96px - 47 Tiles)</h2>
+            <div class="controls">
+                <button onclick="generateTemplate()">Generate Template</button>
+                <button onclick="downloadTemplate()">Download Template</button>
+                <label>
+                    Test Your Tiles: <input type="file" id="userTiles" accept="image/*" onchange="loadUserTiles(event)">
+                </label>
+            </div>
+            
+            <div class="canvas-container">
+                <canvas id="templateCanvas" width="128" height="96" style="width: 256px; height: 192px;"></canvas>
+            </div>
+            
+            <div class="template-grid" id="patternGrid">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>What is a 47-Tile Wang Template?</h2>
+            <div class="pattern-explanation">
+                <div class="pattern-item">
+                    <strong>8-Neighbor Auto-Tiling</strong><br>
+                    Unlike simple 4-direction tiling, this considers all 8 surrounding tiles (N, NE, E, SE, S, SW, W, NW) for smooth transitions.
+                </div>
+                <div class="pattern-item">
+                    <strong>47 Essential Patterns</strong><br>
+                    These 47 tiles cover all the essential patterns needed for seamless auto-tiling without needing all 256 possible combinations.
+                </div>
+                <div class="pattern-item">
+                    <strong>Inside Corners</strong><br>
+                    Handles concave corners where the terrain "cuts in" - essential for realistic coastlines and borders.
+                </div>
+                <div class="pattern-item">
+                    <strong>Diagonal Awareness</strong><br>
+                    Considers diagonal neighbors to prevent visual artifacts and create smoother transitions.
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Your Tile Test</h2>
+            <div id="userTileDisplay" style="display: none;">
+                <canvas id="userCanvas" width="128" height="96" style="width: 256px; height: 192px;"></canvas>
+                <div id="analysisResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Proper 47-tile Wang template for 8-neighbor auto-tiling
+        // This is the standard "blob tileset" used in games like RPG Maker
+        const wangTiles = [
+            // Row 0: Isolated and basic edges
+            { id: 0, pattern: 0b00000000, name: "Isolated" },
+            { id: 1, pattern: 0b00000001, name: "North" },
+            { id: 2, pattern: 0b00000100, name: "East" },
+            { id: 3, pattern: 0b00010000, name: "South" },
+            { id: 4, pattern: 0b01000000, name: "West" },
+            
+            // Row 1: Straight lines and corners
+            { id: 5, pattern: 0b00010001, name: "Vertical" },
+            { id: 6, pattern: 0b01000100, name: "Horizontal" },
+            { id: 7, pattern: 0b00000101, name: "NE Corner" },
+            { id: 8, pattern: 0b00010100, name: "SE Corner" },
+            { id: 9, pattern: 0b01010000, name: "SW Corner" },
+            { id: 10, pattern: 0b01000001, name: "NW Corner" },
+            
+            // Row 2: T-junctions
+            { id: 11, pattern: 0b00010101, name: "T-North" },
+            { id: 12, pattern: 0b01010100, name: "T-East" },
+            { id: 13, pattern: 0b01010001, name: "T-South" },
+            { id: 14, pattern: 0b01000101, name: "T-West" },
+            
+            // Row 3: Cross and complex patterns
+            { id: 15, pattern: 0b01010101, name: "Cross" },
+            
+            // Inside corners (concave corners)
+            { id: 16, pattern: 0b00000111, name: "Inside NE" },
+            { id: 17, pattern: 0b00011100, name: "Inside SE" },
+            { id: 18, pattern: 0b01110000, name: "Inside SW" },
+            { id: 19, pattern: 0b11000001, name: "Inside NW" },
+            
+            // Diagonal connections
+            { id: 20, pattern: 0b00000010, name: "NE Diag" },
+            { id: 21, pattern: 0b00001000, name: "SE Diag" },
+            { id: 22, pattern: 0b00100000, name: "SW Diag" },
+            { id: 23, pattern: 0b10000000, name: "NW Diag" },
+            
+            // Mixed patterns with diagonals
+            { id: 24, pattern: 0b00000011, name: "N+NE" },
+            { id: 25, pattern: 0b00001100, name: "E+SE" },
+            { id: 26, pattern: 0b00110000, name: "S+SW" },
+            { id: 27, pattern: 0b11000000, name: "W+NW" },
+            
+            // Complex inside corners with diagonals
+            { id: 28, pattern: 0b01000111, name: "Complex NE" },
+            { id: 29, pattern: 0b01011100, name: "Complex SE" },
+            { id: 30, pattern: 0b01110001, name: "Complex SW" },
+            { id: 31, pattern: 0b11000101, name: "Complex NW" },
+            
+            // Three-way inside corners
+            { id: 32, pattern: 0b00011111, name: "Triple NE" },
+            { id: 33, pattern: 0b01111100, name: "Triple SE" },
+            { id: 34, pattern: 0b11110000, name: "Triple SW" },
+            { id: 35, pattern: 0b11000011, name: "Triple NW" },
+            
+            // Full connections with missing diagonals
+            { id: 36, pattern: 0b01010111, name: "Full-NW" },
+            { id: 37, pattern: 0b01011101, name: "Full-SW" },
+            { id: 38, pattern: 0b01110101, name: "Full-SE" },
+            { id: 39, pattern: 0b11010101, name: "Full-NE" },
+            
+            // Double diagonal corners
+            { id: 40, pattern: 0b00001010, name: "Diag NE+SE" },
+            { id: 41, pattern: 0b00101000, name: "Diag SE+SW" },
+            { id: 42, pattern: 0b10100000, name: "Diag SW+NW" },
+            { id: 43, pattern: 0b10000010, name: "Diag NW+NE" },
+            
+            // Special cases
+            { id: 44, pattern: 0b01111111, name: "Almost Full 1" },
+            { id: 45, pattern: 0b11111101, name: "Almost Full 2" },
+            { id: 46, pattern: 0b11111111, name: "Full" }
+        ];
+
+        function generateTemplate() {
+            const canvas = document.getElementById('templateCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Calculate dimensions for 47 tiles in roughly square layout
+            const tilesPerRow = 8;
+            const numRows = Math.ceil(wangTiles.length / tilesPerRow);
+            const tileSize = 16;
+            
+            // Resize canvas for the template
+            canvas.width = tilesPerRow * tileSize;
+            canvas.height = numRows * tileSize;
+            
+            // Clear canvas
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Generate tiles
+            wangTiles.forEach((tile, index) => {
+                const col = index % tilesPerRow;
+                const row = Math.floor(index / tilesPerRow);
+                const x = col * tileSize;
+                const y = row * tileSize;
+                
+                generateWangTile(ctx, x, y, tile.pattern, tile.id);
+            });
+            
+            updatePatternGrid();
+        }
+        
+        function generateWangTile(ctx, x, y, pattern, tileId) {
+            const size = 16;
+            const center = size / 2;
+            
+            // Extract 8-direction pattern
+            const north =     (pattern & 0b00000001) !== 0;
+            const northEast = (pattern & 0b00000010) !== 0;
+            const east =      (pattern & 0b00000100) !== 0;
+            const southEast = (pattern & 0b00001000) !== 0;
+            const south =     (pattern & 0b00010000) !== 0;
+            const southWest = (pattern & 0b00100000) !== 0;
+            const west =      (pattern & 0b01000000) !== 0;
+            const northWest = (pattern & 0b10000000) !== 0;
+            
+            // Base tile - light color for empty/water, darker for land/wall
+            ctx.fillStyle = '#87CEEB'; // Light blue background (water/empty)
+            ctx.fillRect(x, y, size, size);
+            
+            // Draw center area as land if we have any connections
+            const hasConnections = north || east || south || west || northEast || southEast || southWest || northWest;
+            if (hasConnections) {
+                ctx.fillStyle = '#8B7355'; // Brown for land/wall center
+                ctx.fillRect(x + 4, y + 4, 8, 8);
+            }
+            
+            // Draw wall/land connections extending from center
+            ctx.fillStyle = '#8B7355'; // Brown for land/wall
+            
+            // Cardinal directions (thick connections)
+            if (north) ctx.fillRect(x + center - 2, y, 4, center + 2);
+            if (east) ctx.fillRect(x + center - 2, y + center - 2, center + 2, 4);
+            if (south) ctx.fillRect(x + center - 2, y + center - 2, 4, center + 2);
+            if (west) ctx.fillRect(x, y + center - 2, center + 2, 4);
+            
+            // Diagonal directions (corner connections)
+            if (northEast) {
+                // Triangle connection to northeast
+                ctx.beginPath();
+                ctx.moveTo(x + center, y + center);
+                ctx.lineTo(x + size, y + center);
+                ctx.lineTo(x + size, y);
+                ctx.lineTo(x + center, y);
+                ctx.fill();
+            }
+            if (southEast) {
+                // Triangle connection to southeast
+                ctx.beginPath();
+                ctx.moveTo(x + center, y + center);
+                ctx.lineTo(x + size, y + center);
+                ctx.lineTo(x + size, y + size);
+                ctx.lineTo(x + center, y + size);
+                ctx.fill();
+            }
+            if (southWest) {
+                // Triangle connection to southwest
+                ctx.beginPath();
+                ctx.moveTo(x + center, y + center);
+                ctx.lineTo(x, y + center);
+                ctx.lineTo(x, y + size);
+                ctx.lineTo(x + center, y + size);
+                ctx.fill();
+            }
+            if (northWest) {
+                // Triangle connection to northwest
+                ctx.beginPath();
+                ctx.moveTo(x + center, y + center);
+                ctx.lineTo(x, y + center);
+                ctx.lineTo(x, y);
+                ctx.lineTo(x + center, y);
+                ctx.fill();
+            }
+            
+            // Add border to show tile boundaries
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+            
+            // Draw tile ID
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 7px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeText(tileId.toString(), x + center, y + center + 2);
+            ctx.fillText(tileId.toString(), x + center, y + center + 2);
+        }
+        
+        function updatePatternGrid() {
+            const grid = document.getElementById('patternGrid');
+            grid.innerHTML = '';
+            
+            // Update grid for 8 columns
+            grid.style.gridTemplateColumns = 'repeat(8, 80px)';
+            
+            wangTiles.forEach(tile => {
+                const tileDiv = document.createElement('div');
+                tileDiv.className = 'tile';
+                
+                // Convert pattern to binary string for display
+                const binaryStr = tile.pattern.toString(2).padStart(8, '0');
+                const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+                const activeConnections = directions.filter((_, i) => binaryStr[7-i] === '1').join(' ');
+                
+                tileDiv.innerHTML = `
+                    <div class="tile-number">${tile.id}</div>
+                    <div class="tile-pattern">
+                        <strong>${tile.name}</strong><br>
+                        <small>${activeConnections || 'None'}</small>
+                    </div>
+                `;
+                
+                grid.appendChild(tileDiv);
+            });
+        }
+        
+        function downloadTemplate() {
+            const canvas = document.getElementById('templateCanvas');
+            const link = document.createElement('a');
+            link.download = 'wang-tile-47-template.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+        
+        function loadUserTiles(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const userCanvas = document.getElementById('userCanvas');
+                    userCanvas.width = img.width;
+                    userCanvas.height = img.height;
+                    const ctx = userCanvas.getContext('2d');
+                    
+                    // Draw user's image
+                    ctx.clearRect(0, 0, userCanvas.width, userCanvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Show analysis
+                    document.getElementById('userTileDisplay').style.display = 'block';
+                    analyzeUserTiles(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function analyzeUserTiles(img) {
+            const analysis = document.getElementById('analysisResult');
+            const expectedWidth = 8 * 16; // 8 tiles wide
+            const expectedHeight = Math.ceil(wangTiles.length / 8) * 16; // Dynamic height
+            
+            let result = '<h3>Analysis Results:</h3>';
+            
+            if (img.width === expectedWidth && img.height === expectedHeight) {
+                result += '<p style="color: green;">✅ Correct dimensions for 47-tile template</p>';
+            } else {
+                result += `<p style="color: red;">❌ Dimensions: ${img.width}x${img.height}px (expected ${expectedWidth}x${expectedHeight}px)</p>`;
+            }
+            
+            result += '<p>📋 47-Tile Wang Template Requirements:</p>';
+            result += '<ul>';
+            result += '<li>47 tiles total (8 columns × 6 rows)</li>';
+            result += '<li>Each tile 16x16 pixels</li>';
+            result += '<li>Total size: 128x96 pixels</li>';
+            result += '<li>Covers all essential 8-neighbor patterns</li>';
+            result += '<li>Includes inside corners and diagonal connections</li>';
+            result += '</ul>';
+            
+            analysis.innerHTML = result;
+        }
+        
+        // Generate template on page load
+        window.onload = function() {
+            generateTemplate();
+        };
+    </script>
+</body>
+</html>

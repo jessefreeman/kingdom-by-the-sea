@@ -53,17 +53,21 @@ export class AutoTiler {
       }
     }
     
-    // Extract cardinal directions and calculate tile index directly
-    const north = (bitValue & 0b00000001) !== 0;  // bit 0
-    const east =  (bitValue & 0b00000100) !== 0;  // bit 2  
-    const south = (bitValue & 0b00010000) !== 0;  // bit 4
-    const west =  (bitValue & 0b01000000) !== 0;  // bit 6
+    // Extract all 8 directions for full pattern analysis
+    const north = (bitValue & 0b00000001) !== 0;     // bit 0
+    const northEast = (bitValue & 0b00000010) !== 0; // bit 1
+    const east = (bitValue & 0b00000100) !== 0;      // bit 2
+    const southEast = (bitValue & 0b00001000) !== 0; // bit 3
+    const south = (bitValue & 0b00010000) !== 0;     // bit 4
+    const southWest = (bitValue & 0b00100000) !== 0; // bit 5
+    const west = (bitValue & 0b01000000) !== 0;      // bit 6
+    const northWest = (bitValue & 0b10000000) !== 0; // bit 7
     
-    // Create 4-bit index that directly maps to sprite position
-    const tileIndex = (north ? 1 : 0) | 
-                     (east ? 2 : 0) | 
-                     (south ? 4 : 0) | 
-                     (west ? 8 : 0);
+    // Use enhanced algorithm that considers diagonal information
+    let tileIndex = this.calculateTileFromPattern(
+      north, northEast, east, southEast, 
+      south, southWest, west, northWest
+    );
     
     const uvCoords = this.getTileUV(tileIndex);
     
@@ -74,10 +78,57 @@ export class AutoTiler {
     };
   }
 
+  // Enhanced pattern calculation using all 8 neighbors
+  private calculateTileFromPattern(
+    north: boolean, northEast: boolean, east: boolean, southEast: boolean,
+    south: boolean, southWest: boolean, west: boolean, northWest: boolean
+  ): number {
+    // First, check basic 4-directional patterns
+    const cardinalIndex = (north ? 1 : 0) | 
+                         (east ? 2 : 0) | 
+                         (south ? 4 : 0) | 
+                         (west ? 8 : 0);
+    
+    // For basic patterns without diagonal conflicts, use the simple mapping
+    if (cardinalIndex === 0) return 5;   // Isolated
+    if (cardinalIndex === 1) return 1;   // North only
+    if (cardinalIndex === 2) return 6;   // East only
+    if (cardinalIndex === 4) return 9;   // South only
+    if (cardinalIndex === 8) return 4;   // West only
+    if (cardinalIndex === 5) return 13;  // North + South
+    if (cardinalIndex === 10) return 7;  // East + West
+    
+    // Corner patterns - but check diagonals for refinement
+    if (cardinalIndex === 3) {  // North + East
+      return northEast ? 2 : 16;  // If diagonal exists, outer corner, else inner corner
+    }
+    if (cardinalIndex === 6) {  // East + South  
+      return southEast ? 10 : 17; // If diagonal exists, outer corner, else inner corner
+    }
+    if (cardinalIndex === 12) { // South + West
+      return southWest ? 8 : 18;  // If diagonal exists, outer corner, else inner corner
+    }
+    if (cardinalIndex === 9) {  // West + North
+      return northWest ? 0 : 19;  // If diagonal exists, outer corner, else inner corner
+    }
+    
+    // T-junction patterns
+    if (cardinalIndex === 7) return 14;   // North + East + South
+    if (cardinalIndex === 14) return 11;  // East + South + West
+    if (cardinalIndex === 13) return 12;  // South + West + North
+    if (cardinalIndex === 11) return 3;   // West + North + East
+    
+    // Full connection
+    if (cardinalIndex === 15) return 15;
+    
+    // Fallback to basic cardinal mapping
+    return cardinalIndex;
+  }
+
   // Convert tile index to UV coordinates
   getTileUV(tileIndex: number): { x: number, y: number } {
-    const col = tileIndex % this.config.gridSize;
-    const row = Math.floor(tileIndex / this.config.gridSize);
+    const col = tileIndex % 4; // 4 columns in your sprite sheet
+    const row = Math.floor(tileIndex / 4); // Calculate row
     
     return {
       x: col * this.config.tileSize,
@@ -107,14 +158,13 @@ export class WaterAutoTiler extends AutoTiler {
     const currentTile = getTileType(x, y);
     
     if (currentTile === 'coast') {
-      // Shallow water/coast - should connect to LAND tiles to form beach edges
-      // This creates the proper water-to-land transition
+      // Coastal water - use enhanced auto-tiling that considers all 8 neighbors
       return this.calculateAutoTile(x, y, getTileType, 'coast', ['grass', 'forest', 'mountain', 'building', 'farm']);
     }
     
-    // For deep water, return isolated tile (no auto-tiling needed)
+    // For deep water, return isolated tile
     return {
-      tileIndex: 5, // Changed from 13 to 5 to match the new sprite ordering
+      tileIndex: 5,
       uvX: this.getTileUV(5).x,
       uvY: this.getTileUV(5).y
     };
