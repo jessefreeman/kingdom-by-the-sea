@@ -215,7 +215,7 @@ export class TileAtlas {
   }
 
   // Debug methods
-  showAtlasDebug(scale: number = 4): void {
+  showAtlasDebug(scale: number = 3): void {
     tileAtlasPreloader.showAtlasDebug(scale);
   }
 

@@ -463,13 +463,22 @@ const label = (c: any) =>
     ? LABEL[c.type] || c.type.slice(0, 2).toUpperCase()
     : "?";
 
-// Import tile atlas for debug renderer
+// Import tile atlas and auto-tiler for debug renderer
 let tileAtlasModule: any = null;
 async function loadTileAtlas() {
   if (!tileAtlasModule) {
     try {
       tileAtlasModule = await import("../tileAtlas");
       await tileAtlasModule.tileAtlas.load();
+      
+      // Also load auto-tiler module for 2D renderer
+      try {
+        const autoTilerModule = await import("../autoTiler");
+        (window as any).autoTilerModule = autoTilerModule;
+      } catch (e) {
+        console.warn("Could not load auto-tiler for debug renderer:", e);
+      }
+      
       // Force redraw once atlas is loaded
       draw();
     } catch (e) {
@@ -516,7 +525,50 @@ function tile(x: number, y: number, c: any) {
     const useLetters = true; // Use letter tiles during development
     const useFog = state.fogEnabled !== false && !c.disc;
 
-    const tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
+    let tileCanvas;
+    
+    // Use auto-tiling for water tiles to match 3D renderer
+    if (t === T.WATER) {
+      // Create helper function to get tile type at position (same as 3D renderer)
+      const getTileType = (checkX: number, checkY: number): string | null => {
+        if (!inBounds(checkX, checkY)) return null;
+        const cell = state.map[idx(checkX, checkY)];
+        if (!cell) return null;
+        
+        const cellType = rt(cell);
+        
+        // Convert to auto-tile types
+        if (cellType === T.WATER) {
+          // Check if it's coast (adjacent to non-water)
+          for (const [dx, dy] of DIRS) {
+            const nx = checkX + dx, ny = checkY + dy;
+            if (inBounds(nx, ny)) {
+              const neighbor = state.map[idx(nx, ny)];
+              const neighborType = rt(neighbor);
+              if (neighborType && neighborType !== T.WATER) {
+                return "coast"; // This water tile is coastal
+              }
+            }
+          }
+          return "water"; // Deep water
+        }
+        
+        return cellType;
+      };
+      
+      // Use the same auto-tiling system as the 3D renderer
+      // Check if auto-tiler module is available globally
+      const autoTilerModule = (window as any).autoTilerModule;
+      if (autoTilerModule && autoTilerModule.waterAutoTiler) {
+        const autoTileResult = autoTilerModule.waterAutoTiler.calculateWaterTile(x, y, getTileType);
+        tileCanvas = atlas.getAutoTileCanvas(atlasType, autoTileResult.tileIndex, useFog);
+      } else {
+        // Fallback to regular tile if auto-tiler not loaded
+        tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
+      }
+    } else {
+      tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
+    }
     if (tileCanvas) {
       // Scale the 16x16 tile to the current tile size
       ctx.save();
@@ -707,7 +759,7 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "a" || e.key === "A") {
     import("../tileAtlasPreloader").then(module => {
-      module.tileAtlasPreloader.showAtlasDebug(6);
+      module.tileAtlasPreloader.showAtlasDebug(3); // Smaller scale for bottom-right positioning
     }).catch(err => {
       console.warn("Could not load atlas preloader for debug:", err);
     });

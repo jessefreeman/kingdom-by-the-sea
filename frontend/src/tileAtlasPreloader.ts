@@ -170,7 +170,7 @@ export class TileAtlasPreloader {
   }
 
   // Debug method to display the generated atlas
-  showAtlasDebug(scale: number = 4): void {
+  showAtlasDebug(scale: number = 3): void {
     if (!this.atlas) {
       console.warn('Atlas not loaded yet');
       return;
@@ -182,26 +182,29 @@ export class TileAtlasPreloader {
       existingDebug.remove();
     }
 
-    // Create debug overlay
+    // Create debug overlay - positioned bottom right
     const debugDiv = document.createElement('div');
     debugDiv.id = 'atlas-debug';
     debugDiv.style.cssText = `
       position: fixed;
-      top: 10px;
+      bottom: 10px;
       right: 10px;
       z-index: 10000;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 10px;
-      border-radius: 5px;
+      background: rgba(0, 0, 0, 0.9);
+      padding: 8px;
+      border-radius: 4px;
       color: white;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 10px;
+      max-width: 200px;
     `;
 
     // Create title
     const title = document.createElement('div');
-    title.textContent = 'Generated Tile Atlas';
-    title.style.marginBottom = '5px';
+    title.textContent = 'Tile Atlas';
+    title.style.marginBottom = '4px';
+    title.style.fontSize = '11px';
+    title.style.fontWeight = 'bold';
     debugDiv.appendChild(title);
 
     // Create scaled canvas display
@@ -210,10 +213,11 @@ export class TileAtlasPreloader {
     displayCanvas.width = atlasSize * scale;
     displayCanvas.height = atlasSize * scale;
     displayCanvas.style.cssText = `
-      border: 1px solid #fff;
+      border: 1px solid #555;
       image-rendering: pixelated;
       image-rendering: -moz-crisp-edges;
       image-rendering: crisp-edges;
+      display: block;
     `;
 
     const displayCtx = displayCanvas.getContext('2d')!;
@@ -222,15 +226,13 @@ export class TileAtlasPreloader {
 
     debugDiv.appendChild(displayCanvas);
 
-    // Add tile info
+    // Add compact tile info
     const info = document.createElement('div');
-    info.style.marginTop = '5px';
+    info.style.marginTop = '4px';
+    info.style.fontSize = '9px';
     info.innerHTML = `
-      <div>Size: ${atlasSize}x${atlasSize}</div>
-      <div>Tiles: ${this.tileMap.size}</div>
-      <div>Overlays: ${this.overlayMap.size}</div>
-      <div>Scale: ${scale}x</div>
-      <div style="margin-top: 5px; font-size: 10px;">
+      <div>${atlasSize}×${atlasSize} • ${this.tileMap.size} tiles</div>
+      <div style="margin-top: 2px; opacity: 0.7;">
         Click to close
       </div>
     `;
@@ -242,7 +244,7 @@ export class TileAtlasPreloader {
     });
 
     document.body.appendChild(debugDiv);
-    console.log('Atlas debug display shown. Click to close.');
+    console.log('Atlas debug display shown (bottom-right). Click to close.');
   }
 
   // Console method to log atlas information
