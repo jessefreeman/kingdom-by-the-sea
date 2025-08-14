@@ -841,6 +841,9 @@
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
             ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
+            
+            // Redraw the map to show the changes
+            drawMap();
         }
         
         // Simple seeded random number generator
@@ -1195,89 +1198,29 @@
         
         // Draw coastline tile at smaller size for the map view
         function drawCoastlineTileSmall(ctx, x, y, size, pattern) {
-            // Extract 8-direction pattern
-            const north =     (pattern.pattern & 0b00000001) !== 0;
-            const northEast = (pattern.pattern & 0b00000010) !== 0;
-            const east =      (pattern.pattern & 0b00000100) !== 0;
-            const southEast = (pattern.pattern & 0b00001000) !== 0;
-            const south =     (pattern.pattern & 0b00010000) !== 0;
-            const southWest = (pattern.pattern & 0b00100000) !== 0;
-            const west =      (pattern.pattern & 0b01000000) !== 0;
-            const northWest = (pattern.pattern & 0b10000000) !== 0;
-            
-            const center = size / 2;
-            const borderWidth = Math.max(2, size / 8); // Thicker border for visibility
-            
+            // Use custom pixel data if available
+            const tileSize = 16;
+            const pixelSize = size / tileSize;
+            const pixels = customTileData[pattern.id] || createDefaultTilePixels(pattern);
+
             // Base tile - coast water color
             ctx.fillStyle = COLORS.coast;
             ctx.fillRect(x, y, size, size);
-            
-            // Draw white coastline borders INSIDE the tile toward the center
-            // This creates the effect of the shoreline being ON the water side
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = Math.max(1, size / 8);
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            // Draw coastline borders - these represent the shore edge
-            // The border should be drawn AWAY from the land direction
-            if (north) {
-                // Land is north, so draw border on the south side of this edge
-                ctx.beginPath();
-                ctx.moveTo(x + borderWidth, y + borderWidth);
-                ctx.lineTo(x + size - borderWidth, y + borderWidth);
-                ctx.stroke();
-            }
-            if (east) {
-                // Land is east, so draw border on the west side of this edge
-                ctx.beginPath();
-                ctx.moveTo(x + size - borderWidth, y + borderWidth);
-                ctx.lineTo(x + size - borderWidth, y + size - borderWidth);
-                ctx.stroke();
-            }
-            if (south) {
-                // Land is south, so draw border on the north side of this edge
-                ctx.beginPath();
-                ctx.moveTo(x + size - borderWidth, y + size - borderWidth);
-                ctx.lineTo(x + borderWidth, y + size - borderWidth);
-                ctx.stroke();
-            }
-            if (west) {
-                // Land is west, so draw border on the east side of this edge
-                ctx.beginPath();
-                ctx.moveTo(x + borderWidth, y + size - borderWidth);
-                ctx.lineTo(x + borderWidth, y + borderWidth);
-                ctx.stroke();
-            }
-            
-            // Draw corner curves for inside corners (where coastline curves inward)
-            if (size > 8) { // Only draw curves if tile is large enough
-                ctx.lineWidth = Math.max(1, size / 10);
-                const radius = borderWidth * 1.2;
-                
-                // Inside corner curves - these create smooth coastline transitions
-                if (!northEast && north && east) {
-                    // Missing NE diagonal but has N and E - this is an inside corner
-                    ctx.beginPath();
-                    ctx.arc(x + size - borderWidth, y + borderWidth, radius, Math.PI, Math.PI * 1.5);
-                    ctx.stroke();
-                }
-                if (!southEast && south && east) {
-                    ctx.beginPath();
-                    ctx.arc(x + size - borderWidth, y + size - borderWidth, radius, Math.PI * 1.5, 0);
-                    ctx.stroke();
-                }
-                if (!southWest && south && west) {
-                    ctx.beginPath();
-                    ctx.arc(x + borderWidth, y + size - borderWidth, radius, 0, Math.PI * 0.5);
-                    ctx.stroke();
-                }
-                if (!northWest && north && west) {
-                    ctx.beginPath();
-                    ctx.arc(x + borderWidth, y + borderWidth, radius, Math.PI * 0.5, Math.PI);
-                    ctx.stroke();
+
+            // Draw custom coastline pixels
+            ctx.fillStyle = '#ffffff';
+            for (let py = 0; py < tileSize; py++) {
+                for (let px = 0; px < tileSize; px++) {
+                    if (pixels[py][px]) {
+                        ctx.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
+                    }
                 }
             }
+
+            // Add tile border for visibility
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
         }
         
         // Generate tile sheet visualization
