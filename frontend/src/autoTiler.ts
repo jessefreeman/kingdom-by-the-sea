@@ -1,5 +1,7 @@
 // Auto-tiling system for Kingdom by the Sea
-// Implements 8-bit auto-tiling with 4x4 template layout
+// Enhanced with proper coastline auto-tiling using 8-neighbor evaluation
+
+import { CoastlineAutoTiler, applyCoastlineTiling, type CoastlineResult } from './coastlineAutoTiler';
 
 export interface AutoTileConfig {
   textureSize: number;
@@ -11,13 +13,20 @@ export interface AutoTileResult {
   tileIndex: number;
   uvX: number;
   uvY: number;
+  patternName?: string;
 }
 
 export class AutoTiler {
-  private config: AutoTileConfig;
+  protected config: AutoTileConfig;
+  protected coastlineTiler: CoastlineAutoTiler;
 
   constructor(config: AutoTileConfig = { textureSize: 64, tileSize: 16, gridSize: 4 }) {
     this.config = config;
+    this.coastlineTiler = new CoastlineAutoTiler({
+      textureSize: config.textureSize,
+      tileSize: config.tileSize,
+      tilesPerRow: 8 // Use 8x6 layout for 47-tile coastline patterns
+    });
   }
 
   // Calculate auto-tile index based on neighbors
@@ -28,6 +37,23 @@ export class AutoTiler {
     targetType: string,
     connectsTo: string[]
   ): AutoTileResult {
+    // For coastline/water tiles, use the enhanced coastline auto-tiler
+    if (targetType === 'water' || targetType === 'coast') {
+      const coastlineResult = this.coastlineTiler.calculateCoastlineTile(
+        x, y, getTileType, ['water', 'coast']
+      );
+      
+      if (coastlineResult) {
+        return {
+          tileIndex: coastlineResult.tileIndex,
+          uvX: coastlineResult.uvX,
+          uvY: coastlineResult.uvY,
+          patternName: coastlineResult.patternName
+        };
+      }
+    }
+
+    // For land tiles, use the original 4-neighbor system
     let bitValue = 0;
     
     // Check the 8 adjacent positions
@@ -148,8 +174,12 @@ export class AutoTiler {
   }
 }
 
-// Water-specific auto-tiler
+// Enhanced Water-specific auto-tiler using coastline system
 export class WaterAutoTiler extends AutoTiler {
+  constructor(config: AutoTileConfig = { textureSize: 64, tileSize: 16, gridSize: 4 }) {
+    super(config);
+  }
+
   calculateWaterTile(
     x: number,
     y: number,
@@ -157,17 +187,44 @@ export class WaterAutoTiler extends AutoTiler {
   ): AutoTileResult {
     const currentTile = getTileType(x, y);
     
-    if (currentTile === 'coast') {
-      // Coastal water - use enhanced auto-tiling that considers all 8 neighbors
-      return this.calculateAutoTile(x, y, getTileType, 'coast', ['grass', 'forest', 'mountain', 'building', 'farm']);
+    if (currentTile === 'water' || currentTile === 'coast') {
+      // Use the enhanced coastline auto-tiler
+      const coastlineResult = this.coastlineTiler.calculateCoastlineTile(
+        x, y, getTileType, ['water', 'coast']
+      );
+      
+      if (coastlineResult) {
+        return {
+          tileIndex: coastlineResult.tileIndex,
+          uvX: coastlineResult.uvX,
+          uvY: coastlineResult.uvY,
+          patternName: coastlineResult.patternName
+        };
+      }
     }
     
-    // For deep water, return isolated tile
+    // Fallback for deep water
     return {
-      tileIndex: 5,
-      uvX: this.getTileUV(5).x,
-      uvY: this.getTileUV(5).y
+      tileIndex: 0,
+      uvX: 0,
+      uvY: 0,
+      patternName: 'Deep Water'
     };
+  }
+
+  /**
+   * Process an entire map and apply coastline auto-tiling
+   */
+  processMap(
+    map: Array<{ type: string }>,
+    mapWidth: number,
+    mapHeight: number
+  ): {
+    processedMap: Array<{ type: string }>,
+    coastlineData: Map<number, CoastlineResult>,
+    stats: { totalTiles: number, coastTiles: number, deepWater: number, landTiles: number }
+  } {
+    return applyCoastlineTiling(map, mapWidth, mapHeight);
   }
 }
 

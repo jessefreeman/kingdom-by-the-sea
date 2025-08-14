@@ -1,6 +1,7 @@
 // Shared types and enums for Kingdom by the Sea
 export type TileType =
   | "water"
+  | "coast"
   | "grass"
   | "forest"
   | "hill"
@@ -19,6 +20,7 @@ export type TileType =
 
 export const T: Record<string, TileType> = {
   WATER: "water",
+  COAST: "coast",
   GRASS: "grass",
   FOREST: "forest",
   HILL: "hill",
