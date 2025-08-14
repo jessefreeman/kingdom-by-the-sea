@@ -148,6 +148,94 @@
             border: 1px solid #dee2e6;
         }
         
+        .editor-controls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid #dee2e6;
+        }
+        
+        .control-buttons {
+            margin-top: 10px;
+        }
+        
+        .control-buttons button {
+            margin-right: 10px;
+            padding: 8px 15px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .control-buttons button.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .control-buttons button:hover {
+            background: #e9ecef;
+        }
+        
+        .control-buttons button.active:hover {
+            background: #0056b3;
+        }
+        
+        #selectedTileInfo {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .editor-layout {
+            display: flex;
+            gap: 30px;
+            margin-top: 20px;
+            align-items: flex-start;
+        }
+        
+        .map-section {
+            flex: 1;
+            min-width: 480px;
+        }
+        
+        .tile-editor-section {
+            flex: 0 0 380px;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .pixel-editor {
+            margin: 15px 0;
+        }
+        
+        .tile-preview {
+            text-align: center;
+            margin-top: 15px;
+        }
+        
+        .tile-preview h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .editor-help {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .editor-help p {
+            margin: 2px 0;
+        }
+        
         .legend {
             display: flex;
             gap: 20px;
@@ -211,15 +299,21 @@
         
         <div class="section">
             <h2>Island Generation & Coastline Testing</h2>
+            <div class="description">
+                <strong>Interactive Tile Editor:</strong> Generate an island, click on any coastline tile to edit it pixel by pixel.
+                Your changes are saved automatically to local storage and updated in real-time.
+            </div>
+            
             <div class="controls">
                 <button onclick="generateIsland()">Generate New Island</button>
                 <button onclick="applyCoastlineTiling()">Apply Coastline Tiling</button>
-                <button onclick="exportTileSheet()">Export Tile Sheet</button>
+                <button onclick="downloadTileSheet()">Download Tile Sheet</button>
+                <button onclick="resetAllTiles()">Reset All Tiles</button>
                 <label>
                     Size: 
                     <select id="mapSize">
-                        <option value="small">Small (16x12)</option>
-                        <option value="medium" selected>Medium (24x18)</option>
+                        <option value="small" selected>Small (16x12)</option>
+                        <option value="medium">Medium (24x18)</option>
                         <option value="large">Large (32x24)</option>
                     </select>
                 </label>
@@ -228,39 +322,56 @@
                 </label>
             </div>
             
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #2e7d32;"></div>
-                    <span>Land (Grass)</span>
+            <div class="editor-layout">
+                <div class="map-section">
+                    <h3>Island Map (Click tiles to edit)</h3>
+                    <canvas id="mapCanvas" width="480" height="360" style="border: 2px solid #333; cursor: pointer;"></canvas>
+                    
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #2e7d32;"></div>
+                            <span>Land</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #4682b4;"></div>
+                            <span>Coastline</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #0c3b66;"></div>
+                            <span>Deep Water</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stats" id="mapStats">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
                 </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #1f5f24;"></div>
-                    <span>Forest</span>
+                
+                <div class="tile-editor-section">
+                    <h3>Tile Editor</h3>
+                    <div id="selectedTileInfo">Click a coastline tile in the map to edit</div>
+                    
+                    <div class="editor-controls">
+                        <button id="drawModeBtn" onclick="setDrawMode(true)" class="active">Draw</button>
+                        <button id="eraseModeBtn" onclick="setDrawMode(false)">Erase</button>
+                        <button onclick="resetCurrentTile()">Reset Tile</button>
+                        <button onclick="undoLastChange()">Undo</button>
+                    </div>
+                    
+                    <div class="pixel-editor">
+                        <canvas id="pixelCanvas" width="320" height="320" style="border: 2px solid #666; cursor: crosshair;"></canvas>
+                        <div class="editor-help">
+                            <p>• Left click: Draw white pixels</p>
+                            <p>• Right click: Erase pixels</p>
+                            <p>• Changes save automatically</p>
+                        </div>
+                    </div>
+                    
+                    <div class="tile-preview">
+                        <h4>Live Preview</h4>
+                        <canvas id="previewCanvas" width="80" height="80" style="border: 1px solid #ccc;"></canvas>
+                    </div>
                 </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #7c6f4a;"></div>
-                    <span>Hills</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #5f5750;"></div>
-                    <span>Mountains</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #4682b4;"></div>
-                    <span>Coastline Water</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #0c3b66;"></div>
-                    <span>Deep Water</span>
-                </div>
-            </div>
-            
-            <div class="canvas-container">
-                <canvas id="mapCanvas" width="480" height="360" style="width: 480px; height: 360px;"></canvas>
-            </div>
-            
-            <div class="stats" id="mapStats">
-                <!-- Will be populated by JavaScript -->
             </div>
         </div>
         
@@ -278,6 +389,41 @@
             
             <div class="pattern-grid" id="patternGrid">
                 <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Interactive Tile Editor</h2>
+            <div class="description">
+                Click on any tile below to edit it pixel by pixel. Each tile is 16x16 pixels.
+                Use left click to draw white coastline pixels, right click to erase.
+            </div>
+            
+            <div class="editor-controls">
+                <div id="selectedTileInfo">Click a tile below to edit it</div>
+                <div class="control-buttons">
+                    <button id="drawModeBtn" onclick="setDrawMode(true)" class="active">Draw Mode</button>
+                    <button id="eraseModeBtn" onclick="setDrawMode(false)">Erase Mode</button>
+                    <button onclick="resetTile()">Reset Current Tile</button>
+                    <button onclick="exportTileData()">Export All Tile Data</button>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 20px; margin-top: 20px;">
+                <div>
+                    <h3>Pixel Editor (16x16)</h3>
+                    <canvas id="editorCanvas" width="320" height="320" style="border: 2px solid #333; cursor: crosshair;"></canvas>
+                    <div style="margin-top: 10px; font-size: 12px;">
+                        <p>• Left click: Draw white pixels</p>
+                        <p>• Right click: Erase pixels</p>
+                        <p>• Each tile is 16x16 pixels</p>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3>All Coastline Patterns (Click to Edit)</h3>
+                    <canvas id="tilesCanvas" width="640" height="480" style="border: 1px solid #ccc; cursor: pointer;"></canvas>
+                </div>
             </div>
         </div>
         
@@ -388,6 +534,329 @@
         // Current map state
         let currentMap = null;
         let mapSize = MAP_SIZES.medium;
+        
+        // Interactive tile editor variables
+        let customTileData = {}; // Store custom pixel data for each tile
+        let selectedTileId = null; // Currently selected tile for editing
+        let selectedTilePosition = null; // Position of selected tile in map
+        let isDrawing = false; // Mouse drawing state
+        let drawMode = true; // true = draw pixels, false = erase pixels
+        let undoStack = []; // For undo functionality
+        
+        // Local storage keys
+        const STORAGE_KEY = 'coastline-tiles';
+        const VERSION_KEY = 'coastline-tiles-version';
+        const CURRENT_VERSION = '1.0';
+        
+        // Create default pixel pattern for a tile based on its Wang pattern
+        function createDefaultTilePixels(pattern) {
+            const tileSize = 16;
+            const pixels = Array(tileSize).fill().map(() => Array(tileSize).fill(false));
+            
+            // Extract 8-direction pattern
+            const north =     (pattern.pattern & 0b00000001) !== 0;
+            const northEast = (pattern.pattern & 0b00000010) !== 0;
+            const east =      (pattern.pattern & 0b00000100) !== 0;
+            const southEast = (pattern.pattern & 0b00001000) !== 0;
+            const south =     (pattern.pattern & 0b00010000) !== 0;
+            const southWest = (pattern.pattern & 0b00100000) !== 0;
+            const west =      (pattern.pattern & 0b01000000) !== 0;
+            const northWest = (pattern.pattern & 0b10000000) !== 0;
+            
+            // Create basic coastline patterns
+            // Edges - draw lines along tile borders
+            if (north) {
+                for (let x = 2; x < tileSize - 2; x++) {
+                    pixels[2][x] = true; // 2 pixels from edge
+                }
+            }
+            if (east) {
+                for (let y = 2; y < tileSize - 2; y++) {
+                    pixels[y][tileSize - 3] = true;
+                }
+            }
+            if (south) {
+                for (let x = 2; x < tileSize - 2; x++) {
+                    pixels[tileSize - 3][x] = true;
+                }
+            }
+            if (west) {
+                for (let y = 2; y < tileSize - 2; y++) {
+                    pixels[y][2] = true;
+                }
+            }
+            
+            // Corners - single pixels for diagonal connections
+            if (northEast && !north && !east) {
+                pixels[2][tileSize - 3] = true; // Single corner pixel
+            }
+            if (southEast && !south && !east) {
+                pixels[tileSize - 3][tileSize - 3] = true;
+            }
+            if (southWest && !south && !west) {
+                pixels[tileSize - 3][2] = true;
+            }
+            if (northWest && !north && !west) {
+                pixels[2][2] = true;
+            }
+            
+            // Inside corners - where edges meet but diagonal is missing
+            if (north && east && !northEast) {
+                // Draw curve from north edge to east edge
+                pixels[2][tileSize - 3] = true;
+                pixels[3][tileSize - 3] = true;
+                pixels[2][tileSize - 4] = true;
+            }
+            if (east && south && !southEast) {
+                pixels[tileSize - 3][tileSize - 3] = true;
+                pixels[tileSize - 3][tileSize - 4] = true;
+                pixels[tileSize - 4][tileSize - 3] = true;
+            }
+            if (south && west && !southWest) {
+                pixels[tileSize - 3][2] = true;
+                pixels[tileSize - 3][3] = true;
+                pixels[tileSize - 4][2] = true;
+            }
+            if (west && north && !northWest) {
+                pixels[2][2] = true;
+                pixels[3][2] = true;
+                pixels[2][3] = true;
+            }
+            
+            return pixels;
+        }
+        
+        // Local storage functions
+        function saveToLocalStorage() {
+            try {
+                const data = {
+                    tiles: customTileData,
+                    version: CURRENT_VERSION,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+            } catch (e) {
+                console.warn('Failed to save to localStorage:', e);
+            }
+        }
+        
+        function loadFromLocalStorage() {
+            try {
+                const versionStored = localStorage.getItem(VERSION_KEY);
+                if (versionStored !== CURRENT_VERSION) {
+                    console.log('Version mismatch, clearing storage');
+                    localStorage.removeItem(STORAGE_KEY);
+                    return;
+                }
+                
+                const data = localStorage.getItem(STORAGE_KEY);
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (parsed.tiles) {
+                        customTileData = parsed.tiles;
+                        console.log(`Loaded ${Object.keys(customTileData).length} custom tiles from storage`);
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load from localStorage:', e);
+            }
+        }
+        
+        function clearLocalStorage() {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(VERSION_KEY);
+            customTileData = {};
+        }
+        
+        // Handle mouse events for tile editing
+        function setupTileEditor() {
+            // Map canvas click to select tiles
+            const mapCanvas = document.getElementById('mapCanvas');
+            mapCanvas.addEventListener('click', (e) => {
+                if (!currentMap) return;
+                
+                const rect = mapCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // Calculate which tile was clicked
+                const tileSize = Math.min(
+                    mapCanvas.width / currentMap.width,
+                    mapCanvas.height / currentMap.height
+                );
+                
+                const col = Math.floor(x / tileSize);
+                const row = Math.floor(y / tileSize);
+                
+                if (col >= 0 && col < currentMap.width && row >= 0 && row < currentMap.height) {
+                    const tile = currentMap.tiles[row][col];
+                    
+                    // Only allow editing of coast tiles
+                    if (tile.type === 'coast' && tile.coastlinePattern !== undefined) {
+                        selectTileForEditing(tile.coastlinePattern, { x: col, y: row });
+                    }
+                }
+            });
+            
+            // Pixel editor canvas events
+            const pixelCanvas = document.getElementById('pixelCanvas');
+            if (pixelCanvas) {
+                pixelCanvas.addEventListener('mousedown', startDrawing);
+                pixelCanvas.addEventListener('mousemove', drawPixel);
+                pixelCanvas.addEventListener('mouseup', stopDrawing);
+                pixelCanvas.addEventListener('mouseleave', stopDrawing);
+                pixelCanvas.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    return false;
+                });
+            }
+        }
+        
+        function selectTileForEditing(patternId, position) {
+            selectedTileId = patternId;
+            selectedTilePosition = position;
+            
+            // Save current state for undo
+            if (customTileData[patternId]) {
+                undoStack.push(JSON.parse(JSON.stringify(customTileData[patternId])));
+                if (undoStack.length > 20) undoStack.shift(); // Limit undo history
+            }
+            
+            updatePixelEditor();
+            updatePreview();
+            
+            const pattern = COASTLINE_PATTERNS.find(p => p.id === patternId);
+            if (pattern) {
+                document.getElementById('selectedTileInfo').textContent = 
+                    `Editing Tile ${pattern.id}: ${pattern.name} at (${position.x}, ${position.y})`;
+            }
+        }
+        
+        function startDrawing(e) {
+            isDrawing = true;
+            drawMode = e.button === 0; // Left click = draw, right click = erase
+            drawPixel(e);
+        }
+        
+        function drawPixel(e) {
+            if (!isDrawing || selectedTileId === null) return;
+            
+            const canvas = e.target;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const pixelSize = canvas.width / 16;
+            const pixelX = Math.floor(x / pixelSize);
+            const pixelY = Math.floor(y / pixelSize);
+            
+            if (pixelX >= 0 && pixelX < 16 && pixelY >= 0 && pixelY < 16) {
+                // Ensure tile data exists
+                if (!customTileData[selectedTileId]) {
+                    const pattern = COASTLINE_PATTERNS.find(p => p.id === selectedTileId);
+                    customTileData[selectedTileId] = createDefaultTilePixels(pattern);
+                }
+                
+                // Update pixel
+                customTileData[selectedTileId][pixelY][pixelX] = drawMode;
+                
+                // Save to localStorage and update displays
+                saveToLocalStorage();
+                updatePixelEditor();
+                updatePreview();
+                
+                // Update the map in real-time
+                if (currentMap && selectedTilePosition) {
+                    drawMap();
+                }
+            }
+        }
+        
+        function stopDrawing() {
+            isDrawing = false;
+        }
+        
+        // Update the pixel editor canvas
+        function updatePixelEditor() {
+            const canvas = document.getElementById('pixelCanvas');
+            if (!canvas || selectedTileId === null) return;
+            
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+            const pixelSize = size / 16;
+            
+            // Clear canvas with water color
+            ctx.fillStyle = COLORS.coast;
+            ctx.fillRect(0, 0, size, size);
+            
+            // Get tile data
+            if (!customTileData[selectedTileId]) {
+                const pattern = COASTLINE_PATTERNS.find(p => p.id === selectedTileId);
+                customTileData[selectedTileId] = createDefaultTilePixels(pattern);
+            }
+            
+            const pixels = customTileData[selectedTileId];
+            
+            // Draw pixels
+            ctx.fillStyle = '#ffffff';
+            for (let y = 0; y < 16; y++) {
+                for (let x = 0; x < 16; x++) {
+                    if (pixels[y][x]) {
+                        ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize);
+                    }
+                }
+            }
+            
+            // Draw grid
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 16; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * pixelSize, 0);
+                ctx.lineTo(i * pixelSize, size);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(0, i * pixelSize);
+                ctx.lineTo(size, i * pixelSize);
+                ctx.stroke();
+            }
+        }
+        
+        // Update the preview canvas
+        function updatePreview() {
+            const canvas = document.getElementById('previewCanvas');
+            if (!canvas || selectedTileId === null) return;
+            
+            const ctx = canvas.getContext('2d');
+            const size = canvas.width;
+            const pixelSize = size / 16;
+            
+            // Clear canvas with water color
+            ctx.fillStyle = COLORS.coast;
+            ctx.fillRect(0, 0, size, size);
+            
+            // Get tile data
+            if (customTileData[selectedTileId]) {
+                const pixels = customTileData[selectedTileId];
+                
+                // Draw pixels
+                ctx.fillStyle = '#ffffff';
+                for (let y = 0; y < 16; y++) {
+                    for (let x = 0; x < 16; x++) {
+                        if (pixels[y][x]) {
+                            ctx.fillRect(x * pixelSize, y * pixelSize, pixelSize, pixelSize);
+                        }
+                    }
+                }
+            }
+            
+            // Add border
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(0.5, 0.5, size - 1, size - 1);
+        }
         
         // Simple seeded random number generator
         function seededRng(seed) {
@@ -506,6 +975,21 @@
             let coastTileCount = 0;
             const tileUsage = new Map();
             
+            console.log('🐛 DEBUG: Starting coastline tiling analysis...');
+            console.log('Map size:', mapSize.w, 'x', mapSize.h);
+            
+            // Debug: Log the raw map data first
+            console.log('Raw map data for seed 12345:');
+            for (let y = 0; y < Math.min(mapSize.h, 10); y++) {
+                let row = '';
+                for (let x = 0; x < Math.min(mapSize.w, 20); x++) {
+                    const idx = y * mapSize.w + x;
+                    const tile = currentMap[idx];
+                    row += tile === 'water' ? 'W' : (tile === 'grass' ? 'G' : (tile === 'forest' ? 'F' : (tile === 'hill' ? 'H' : 'M')));
+                }
+                console.log(`Row ${y}: ${row}`);
+            }
+            
             // Process each water tile to see if it should become a coastline tile
             for (let y = 0; y < mapSize.h; y++) {
                 for (let x = 0; x < mapSize.w; x++) {
@@ -522,6 +1006,31 @@
                         const pattern = calculateCoastlinePattern(x, y);
                         const tileId = findBestTileMatch(pattern);
                         
+                        // Debug specific problematic tiles
+                        if (x < 5 && y < 5) {
+                            console.log(`🐛 Water tile (${x},${y}): adjacent=${hasAdjacentLand}, pattern=${pattern.toString(2).padStart(8, '0')}, tileId=${tileId}`);
+                            
+                            // Log neighbor analysis
+                            console.log('  Neighbors:');
+                            const directions = [
+                                { dx: 0, dy: -1, name: 'N' },
+                                { dx: 1, dy: -1, name: 'NE' },
+                                { dx: 1, dy: 0, name: 'E' },
+                                { dx: 1, dy: 1, name: 'SE' },
+                                { dx: 0, dy: 1, name: 'S' },
+                                { dx: -1, dy: 1, name: 'SW' },
+                                { dx: -1, dy: 0, name: 'W' },
+                                { dx: -1, dy: -1, name: 'NW' }
+                            ];
+                            
+                            directions.forEach(dir => {
+                                const nx = x + dir.dx;
+                                const ny = y + dir.dy;
+                                const neighborType = getNeighborType(nx, ny);
+                                console.log(`    ${dir.name}: (${nx},${ny}) = ${neighborType}`);
+                            });
+                        }
+                        
                         newMap[idx] = 'coast';
                         coastTileCount++;
                         
@@ -537,6 +1046,15 @@
             currentMap = newMap;
             drawMap();
             runUnitTests(tileUsage, coastTileCount);
+        }
+        
+        // Helper function to get neighbor tile type with bounds checking
+        function getNeighborType(x, y) {
+            if (x < 0 || x >= mapSize.w || y < 0 || y >= mapSize.h) {
+                return 'OUT_OF_BOUNDS';
+            }
+            const idx = y * mapSize.w + x;
+            return currentMap[idx];
         }
         
         // Check if a water tile has any adjacent land
@@ -703,67 +1221,75 @@
             const northWest = (pattern.pattern & 0b10000000) !== 0;
             
             const center = size / 2;
-            const border = Math.max(1, size / 12); // Scale border with tile size
+            const borderWidth = Math.max(2, size / 8); // Thicker border for visibility
             
             // Base tile - coast water color
             ctx.fillStyle = COLORS.coast;
             ctx.fillRect(x, y, size, size);
             
-            // Draw white coastline borders where land is adjacent
+            // Draw white coastline borders INSIDE the tile toward the center
+            // This creates the effect of the shoreline being ON the water side
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = Math.max(1, size / 10);
+            ctx.lineWidth = Math.max(1, size / 8);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             
-            // Draw coastline borders (white lines) where land meets water
+            // Draw coastline borders - these represent the shore edge
+            // The border should be drawn AWAY from the land direction
             if (north) {
+                // Land is north, so draw border on the south side of this edge
                 ctx.beginPath();
-                ctx.moveTo(x + border, y + border);
-                ctx.lineTo(x + size - border, y + border);
+                ctx.moveTo(x + borderWidth, y + borderWidth);
+                ctx.lineTo(x + size - borderWidth, y + borderWidth);
                 ctx.stroke();
             }
             if (east) {
+                // Land is east, so draw border on the west side of this edge
                 ctx.beginPath();
-                ctx.moveTo(x + size - border, y + border);
-                ctx.lineTo(x + size - border, y + size - border);
+                ctx.moveTo(x + size - borderWidth, y + borderWidth);
+                ctx.lineTo(x + size - borderWidth, y + size - borderWidth);
                 ctx.stroke();
             }
             if (south) {
+                // Land is south, so draw border on the north side of this edge
                 ctx.beginPath();
-                ctx.moveTo(x + size - border, y + size - border);
-                ctx.lineTo(x + border, y + size - border);
+                ctx.moveTo(x + size - borderWidth, y + size - borderWidth);
+                ctx.lineTo(x + borderWidth, y + size - borderWidth);
                 ctx.stroke();
             }
             if (west) {
+                // Land is west, so draw border on the east side of this edge
                 ctx.beginPath();
-                ctx.moveTo(x + border, y + size - border);
-                ctx.lineTo(x + border, y + border);
+                ctx.moveTo(x + borderWidth, y + size - borderWidth);
+                ctx.lineTo(x + borderWidth, y + borderWidth);
                 ctx.stroke();
             }
             
-            // Draw curved corners for smooth coastlines
-            if (size > 10) { // Only draw curves if tile is large enough
-                ctx.lineWidth = Math.max(1, size / 15);
-                const radius = border * 0.8;
+            // Draw corner curves for inside corners (where coastline curves inward)
+            if (size > 8) { // Only draw curves if tile is large enough
+                ctx.lineWidth = Math.max(1, size / 10);
+                const radius = borderWidth * 1.2;
                 
-                if (northEast && north && east) {
+                // Inside corner curves - these create smooth coastline transitions
+                if (!northEast && north && east) {
+                    // Missing NE diagonal but has N and E - this is an inside corner
                     ctx.beginPath();
-                    ctx.arc(x + size - border, y + border, radius, Math.PI, Math.PI * 1.5);
+                    ctx.arc(x + size - borderWidth, y + borderWidth, radius, Math.PI, Math.PI * 1.5);
                     ctx.stroke();
                 }
-                if (southEast && south && east) {
+                if (!southEast && south && east) {
                     ctx.beginPath();
-                    ctx.arc(x + size - border, y + size - border, radius, Math.PI * 1.5, 0);
+                    ctx.arc(x + size - borderWidth, y + size - borderWidth, radius, Math.PI * 1.5, 0);
                     ctx.stroke();
                 }
-                if (southWest && south && west) {
+                if (!southWest && south && west) {
                     ctx.beginPath();
-                    ctx.arc(x + border, y + size - border, radius, 0, Math.PI * 0.5);
+                    ctx.arc(x + borderWidth, y + size - borderWidth, radius, 0, Math.PI * 0.5);
                     ctx.stroke();
                 }
-                if (northWest && north && west) {
+                if (!northWest && north && west) {
                     ctx.beginPath();
-                    ctx.arc(x + border, y + border, radius, Math.PI * 0.5, Math.PI);
+                    ctx.arc(x + borderWidth, y + borderWidth, radius, Math.PI * 0.5, Math.PI);
                     ctx.stroke();
                 }
             }
@@ -798,79 +1324,42 @@
             updatePatternGrid();
         }
         
-        // Draw a single coastline tile pattern
+        // Draw a single coastline tile pattern with pixel-perfect rendering
         function drawCoastlineTile(ctx, x, y, size, pattern) {
-            // Extract 8-direction pattern
-            const north =     (pattern.pattern & 0b00000001) !== 0;
-            const northEast = (pattern.pattern & 0b00000010) !== 0;
-            const east =      (pattern.pattern & 0b00000100) !== 0;
-            const southEast = (pattern.pattern & 0b00001000) !== 0;
-            const south =     (pattern.pattern & 0b00010000) !== 0;
-            const southWest = (pattern.pattern & 0b00100000) !== 0;
-            const west =      (pattern.pattern & 0b01000000) !== 0;
-            const northWest = (pattern.pattern & 0b10000000) !== 0;
+            const tileSize = 16; // Each tile is 16x16 pixels
+            const pixelSize = size / tileSize; // Scale factor for display
             
-            const center = size / 2;
-            const border = size / 8; // Thinner border for coastline
-            
-            // Base tile - always water/coast color
+            // Base tile - water color
             ctx.fillStyle = COLORS.coast;
             ctx.fillRect(x, y, size, size);
             
-            // Draw white coastline borders where land is adjacent
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 3;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            
-            // Draw coastline borders (white lines) where land meets water
-            if (north) {
-                ctx.beginPath();
-                ctx.moveTo(x + border, y + border);
-                ctx.lineTo(x + size - border, y + border);
-                ctx.stroke();
-            }
-            if (east) {
-                ctx.beginPath();
-                ctx.moveTo(x + size - border, y + border);
-                ctx.lineTo(x + size - border, y + size - border);
-                ctx.stroke();
-            }
-            if (south) {
-                ctx.beginPath();
-                ctx.moveTo(x + size - border, y + size - border);
-                ctx.lineTo(x + border, y + size - border);
-                ctx.stroke();
-            }
-            if (west) {
-                ctx.beginPath();
-                ctx.moveTo(x + border, y + size - border);
-                ctx.lineTo(x + border, y + border);
-                ctx.stroke();
+            // Get or create custom tile data for this pattern
+            if (!customTileData[pattern.id]) {
+                customTileData[pattern.id] = createDefaultTilePixels(pattern);
             }
             
-            // Draw curved corners for diagonal connections
-            ctx.lineWidth = 2;
-            if (northEast && north && east) {
-                // Inside corner curve
-                ctx.beginPath();
-                ctx.arc(x + size - border, y + border, border * 0.8, Math.PI, Math.PI * 1.5);
-                ctx.stroke();
+            const pixels = customTileData[pattern.id];
+            
+            // Draw each pixel
+            ctx.fillStyle = '#ffffff'; // Coastline pixels are white
+            for (let py = 0; py < tileSize; py++) {
+                for (let px = 0; px < tileSize; px++) {
+                    if (pixels[py][px]) {
+                        ctx.fillRect(
+                            x + px * pixelSize,
+                            y + py * pixelSize,
+                            pixelSize,
+                            pixelSize
+                        );
+                    }
+                }
             }
-            if (southEast && south && east) {
-                ctx.beginPath();
-                ctx.arc(x + size - border, y + size - border, border * 0.8, Math.PI * 1.5, 0);
-                ctx.stroke();
-            }
-            if (southWest && south && west) {
-                ctx.beginPath();
-                ctx.arc(x + border, y + size - border, border * 0.8, 0, Math.PI * 0.5);
-                ctx.stroke();
-            }
-            if (northWest && north && west) {
-                ctx.beginPath();
-                ctx.arc(x + border, y + border, border * 0.8, Math.PI * 0.5, Math.PI);
-                ctx.stroke();
+            
+            // Highlight selected tile
+            if (selectedTileId === pattern.id) {
+                ctx.strokeStyle = '#ff0000';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x, y, size, size);
             }
             
             // Add tile border
@@ -879,13 +1368,10 @@
             ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
             
             // Draw tile ID
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 10px Arial';
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 12px Arial';
             ctx.textAlign = 'center';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
-            ctx.strokeText(pattern.id.toString(), x + center, y + center + 3);
-            ctx.fillText(pattern.id.toString(), x + center, y + center + 3);
+            ctx.fillText(pattern.id.toString(), x + size/2, y + size - 5);
         }
         
         // Update pattern grid display
@@ -1041,10 +1527,115 @@
             link.click();
         }
         
+        // Drawing mode controls
+        function setDrawMode(mode) {
+            drawMode = mode;
+            document.getElementById('drawModeBtn').classList.toggle('active', mode);
+            document.getElementById('eraseModeBtn').classList.toggle('active', !mode);
+        }
+        
+        function resetCurrentTile() {
+            if (selectedTileId !== null) {
+                const pattern = COASTLINE_PATTERNS.find(p => p.id === selectedTileId);
+                if (pattern) {
+                    customTileData[selectedTileId] = createDefaultTilePixels(pattern);
+                    saveToLocalStorage();
+                    updatePixelEditor();
+                    updatePreview();
+                    if (currentMap && selectedTilePosition) {
+                        drawMap();
+                    }
+                }
+            }
+        }
+        
+        function undoLastChange() {
+            if (selectedTileId !== null && undoStack.length > 0) {
+                customTileData[selectedTileId] = undoStack.pop();
+                saveToLocalStorage();
+                updatePixelEditor();
+                updatePreview();
+                if (currentMap && selectedTilePosition) {
+                    drawMap();
+                }
+            }
+        }
+        
+        function resetAllTiles() {
+            if (confirm('Reset all tiles to default patterns? This cannot be undone.')) {
+                clearLocalStorage();
+                selectedTileId = null;
+                selectedTilePosition = null;
+                undoStack = [];
+                document.getElementById('selectedTileInfo').textContent = 'Click a coastline tile in the map to edit';
+                
+                // Clear the editor canvases
+                const pixelCanvas = document.getElementById('pixelCanvas');
+                const previewCanvas = document.getElementById('previewCanvas');
+                if (pixelCanvas) {
+                    const ctx = pixelCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+                }
+                if (previewCanvas) {
+                    const ctx = previewCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+                }
+                
+                if (currentMap) {
+                    drawMap();
+                }
+            }
+        }
+        
+        function downloadTileSheet() {
+            // Create a canvas for the full tile sheet
+            const canvas = document.createElement('canvas');
+            const tileSize = 16;
+            const tilesPerRow = 8;
+            const rows = Math.ceil(COASTLINE_PATTERNS.length / tilesPerRow);
+            
+            canvas.width = tilesPerRow * tileSize;
+            canvas.height = rows * tileSize;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Draw each tile
+            COASTLINE_PATTERNS.forEach((pattern, index) => {
+                const col = index % tilesPerRow;
+                const row = Math.floor(index / tilesPerRow);
+                const x = col * tileSize;
+                const y = row * tileSize;
+                
+                // Fill with water color
+                ctx.fillStyle = '#4682b4';
+                ctx.fillRect(x, y, tileSize, tileSize);
+                
+                // Draw custom pixels or default pattern
+                const pixels = customTileData[pattern.id] || createDefaultTilePixels(pattern);
+                ctx.fillStyle = '#ffffff';
+                
+                for (let py = 0; py < tileSize; py++) {
+                    for (let px = 0; px < tileSize; px++) {
+                        if (pixels[py][px]) {
+                            ctx.fillRect(x + px, y + py, 1, 1);
+                        }
+                    }
+                }
+            });
+            
+            // Download the image
+            const link = document.createElement('a');
+            link.download = 'coastline-tileset-16x16.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+        
         // Initialize the page
         window.onload = function() {
+            loadFromLocalStorage();
             generateTileSheet();
             generateIsland();
+            setupTileEditor();
         };
     </script>
 </body>
