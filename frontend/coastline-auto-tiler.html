@@ -499,6 +499,7 @@
         // Current map state
         let currentMap = null;
         let mapSize = MAP_SIZES.medium;
+        let coastTileMap = {}; // Store actual tile IDs for each coast position
         
         // Interactive tile editor variables
         let customTileData = {}; // Store custom pixel data for each tile
@@ -667,17 +668,34 @@
                 if (col >= 0 && col < mapSize.w && row >= 0 && row < mapSize.h) {
                     const idx = row * mapSize.w + col;
                     const tileType = currentMap[idx];
-                    console.log('Tile at position:', tileType, 'index:', idx);
+                    console.log('🎯 Clicked tile at position:', col, row, 'type:', tileType, 'index:', idx);
                     
                     // Only allow editing of coast tiles
                     if (tileType === 'coast') {
-                        // Calculate the coastline pattern for this tile
-                        const pattern = calculateCoastlinePattern(col, row);
-                        const tileId = findBestTileMatch(pattern);
-                        console.log('Selecting coast tile for editing:', tileId, 'pattern:', pattern);
-                        selectTileForEditing(tileId, { x: col, y: row });
+                        // Get the stored tile ID for this coast position
+                        const storedTileId = coastTileMap[`${col},${row}`];
+                        
+                        if (storedTileId) {
+                            console.log('🔍 Using stored tile ID:', storedTileId);
+                            
+                            // Find the actual pattern object
+                            const patternObj = COASTLINE_PATTERNS.find(p => p.id === storedTileId);
+                            if (patternObj) {
+                                console.log('  - Pattern name:', patternObj.name);
+                                console.log('  - Pattern bits:', patternObj.pattern.toString(2).padStart(8, '0'));
+                            }
+                            
+                            selectTileForEditing(storedTileId, { x: col, y: row });
+                        } else {
+                            console.log('❌ No stored tile ID found for this coast position');
+                            // Fallback to calculation
+                            const pattern = calculateCoastlinePattern(col, row);
+                            const tileId = findBestTileMatch(pattern);
+                            console.log('🔄 Fallback calculated tile ID:', tileId);
+                            selectTileForEditing(tileId, { x: col, y: row });
+                        }
                     } else {
-                        console.log('Tile is not a coast tile:', tileType);
+                        console.log('❌ Tile is not a coast tile:', tileType);
                     }
                 } else {
                     console.log('Click outside map bounds');
@@ -963,6 +981,9 @@
             let coastTileCount = 0;
             const tileUsage = new Map();
             
+            // Clear the coastTileMap for the new generation
+            coastTileMap = {};
+            
             console.log('🐛 DEBUG: Starting coastline tiling analysis...');
             console.log('Map size:', mapSize.w, 'x', mapSize.h);
             
@@ -1020,6 +1041,10 @@
                         }
                         
                         newMap[idx] = 'coast';
+                        
+                        // Store the tile ID for this coast position
+                        coastTileMap[`${x},${y}`] = tileId;
+                        
                         coastTileCount++;
                         
                         // Track tile usage for statistics
@@ -1170,17 +1195,30 @@
                     const drawY = y * tileSize;
                     
                     if (tileType === 'coast') {
-                        // For coast tiles, draw the actual wang tile pattern
-                        const pattern = calculateCoastlinePattern(x, y);
-                        const tileId = findBestTileMatch(pattern);
-                        const patternData = COASTLINE_PATTERNS.find(p => p.id === tileId);
+                        // For coast tiles, use the stored tile ID
+                        const storedTileId = coastTileMap[`${x},${y}`];
                         
-                        if (patternData) {
-                            drawCoastlineTileSmall(ctx, drawX, drawY, tileSize, patternData);
+                        if (storedTileId) {
+                            const patternData = COASTLINE_PATTERNS.find(p => p.id === storedTileId);
+                            if (patternData) {
+                                drawCoastlineTileSmall(ctx, drawX, drawY, tileSize, patternData);
+                            } else {
+                                // Fallback to solid color
+                                ctx.fillStyle = COLORS[tileType] || '#999';
+                                ctx.fillRect(drawX, drawY, tileSize, tileSize);
+                            }
                         } else {
-                            // Fallback to solid color
-                            ctx.fillStyle = COLORS[tileType] || '#999';
-                            ctx.fillRect(drawX, drawY, tileSize, tileSize);
+                            // Fallback: calculate pattern if no stored ID
+                            const pattern = calculateCoastlinePattern(x, y);
+                            const tileId = findBestTileMatch(pattern);
+                            const patternData = COASTLINE_PATTERNS.find(p => p.id === tileId);
+                            
+                            if (patternData) {
+                                drawCoastlineTileSmall(ctx, drawX, drawY, tileSize, patternData);
+                            } else {
+                                ctx.fillStyle = COLORS[tileType] || '#999';
+                                ctx.fillRect(drawX, drawY, tileSize, tileSize);
+                            }
                         }
                     } else {
                         // For non-coast tiles, use solid colors
