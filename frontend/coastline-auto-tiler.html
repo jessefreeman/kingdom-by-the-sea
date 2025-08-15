@@ -139,6 +139,17 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: 100%;
+        }
+
+        #mapCanvas {
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            border: 2px solid #34495e;
+            border-radius: 8px;
+            background: #000;
+            cursor: crosshair;
         }
         
         .sidebar {
@@ -365,7 +376,7 @@
 
         <div class="main-layout">
             <div class="map-section">
-                <canvas id="mapCanvas" width="1440" height="1152"></canvas>
+                <canvas id="mapCanvas" width="2400" height="1920"></canvas>
                 
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -424,7 +435,7 @@
         let coastlineData = new Set();
         let mapWidth = 10;    // Default medium size
         let mapHeight = 8;    // Default medium size  
-        let tileSize = 48;    // 3x larger: 16 * 3 = 48
+        let tileSize = 80;    // Much larger: 16 * 5 = 80 for better visibility
         let selectedTile = null;
         let currentEditType = 'grass'; // Match game tile types
         
