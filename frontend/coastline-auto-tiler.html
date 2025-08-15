@@ -225,6 +225,15 @@
             background: #7c6f4a;
         }
         
+        .color-option.white {
+            background: #ffffff;
+            border: 2px solid #ccc;
+        }
+        
+        .color-option.white.selected {
+            border-color: #333;
+        }
+        
         canvas {
             border: 3px solid #34495e;
             image-rendering: pixelated;
@@ -321,16 +330,6 @@
                     <input type="number" id="islandSeed" value="12345">
                 </div>
                 
-                <div class="control-group">
-                    <label for="tileSize">Tile Size:</label>
-                    <select id="tileSize">
-                        <option value="16">16px</option>
-                        <option value="20">20px</option>
-                        <option value="24" selected>24px</option>
-                        <option value="32">32px</option>
-                    </select>
-                </div>
-                
                 <button onclick="generateIsland()">🏝️ Generate Island</button>
                 <button onclick="detectCoastline()" class="secondary">🌊 Detect Coastline</button>
                 <button onclick="clearCoastline()" class="danger">🧹 Clear Coastline</button>
@@ -398,10 +397,11 @@
                             <div class="color-option water" data-type="water" title="Water"></div>
                             <div class="color-option forest" data-type="forest" title="Forest"></div>
                             <div class="color-option hill" data-type="hill" title="Hill"></div>
+                            <div class="color-option white" data-type="white" title="White/Coast"></div>
                         </div>
                     </div>
                     
-                    <canvas id="editorCanvas" width="200" height="200"></canvas>
+                    <canvas id="editorCanvas" width="320" height="320"></canvas>
                     
                     <div class="editor-controls">
                         <button onclick="clearEditor()">Clear</button>
@@ -423,7 +423,7 @@
         let coastlineData = new Set();
         let mapWidth = 10;    // Default medium size
         let mapHeight = 8;    // Default medium size  
-        let tileSize = 24;    // CSS --tile variable default
+        let tileSize = 16;    // Fixed 16x16 tiles
         let selectedTile = null;
         let currentEditType = 'grass'; // Match game tile types
         
@@ -446,6 +446,7 @@
             forest: '#1f5f24',    // Dark green like KBTS
             hill: '#7c6f4a',      // Brown like KBTS
             mountain: '#5f5750',  // Gray like KBTS
+            white: '#ffffff',     // White for coastline drawing
             selected: '#ff6b6b',  // Red highlight
             grid: '#cccccc'       // Light gray
         };
@@ -489,7 +490,7 @@
             const mapSize = MAP_SIZES[size];
             mapWidth = mapSize.w;
             mapHeight = mapSize.h;
-            tileSize = parseInt(document.getElementById('tileSize').value);
+            tileSize = 16; // Fixed 16x16
             
             mapCanvas.width = mapWidth * tileSize;
             mapCanvas.height = mapHeight * tileSize;
@@ -507,7 +508,6 @@
         function setupEventListeners() {
             // Map size controls
             document.getElementById('mapSize').addEventListener('change', updateMapSize);
-            document.getElementById('tileSize').addEventListener('change', updateMapSize);
             
             // Canvas click handling
             mapCanvas.addEventListener('click', handleMapClick);
@@ -840,7 +840,7 @@
             }
         }
         
-        // Load a tile into the editor - KBTS compatible
+                // Load a tile into the editor - KBTS compatible
         function loadTileIntoEditor(x, y) {
             if (!mapData[y] || !mapData[y][x]) return;
             
@@ -853,19 +853,124 @@
                 Coast: ${isCoast ? 'Yes' : 'No'}
             `;
             
-            // Initialize editor with current tile
-            const editorSize = 200;
-            const pixelSize = editorSize / 10; // 10x10 pixel grid
+            // Initialize editor with current tile - larger 20x20 pixel grid for better editing
+            const editorSize = 320;
+            const pixelSize = editorSize / 20; // 20x20 pixel grid
             
             editorTileData = [];
-            for (let py = 0; py < 10; py++) {
+            for (let py = 0; py < 20; py++) {
                 editorTileData[py] = [];
-                for (let px = 0; px < 10; px++) {
+                for (let px = 0; px < 20; px++) {
                     editorTileData[py][px] = tileType;
                 }
             }
             
             renderEditor();
+        }
+        
+        // Render the tile editor - updated for larger size
+        function renderEditor() {
+            const editorSize = 320;
+            const pixelSize = editorSize / 20; // 20x20 pixels
+            
+            editorCtx.clearRect(0, 0, editorSize, editorSize);
+            
+            for (let py = 0; py < 20; py++) {
+                for (let px = 0; px < 20; px++) {
+                    const x = px * pixelSize;
+                    const y = py * pixelSize;
+                    
+                    let color = COLORS.water;
+                    if (editorTileData[py] && editorTileData[py][px]) {
+                        color = COLORS[editorTileData[py][px]] || COLORS.water;
+                    }
+                    
+                    editorCtx.fillStyle = color;
+                    editorCtx.fillRect(x, y, pixelSize, pixelSize);
+                    
+                    // Grid lines
+                    editorCtx.strokeStyle = '#666';
+                    editorCtx.lineWidth = 1;
+                    editorCtx.strokeRect(x, y, pixelSize, pixelSize);
+                }
+            }
+        }
+        
+        // Editor interaction - updated for larger size
+        function startEditing(event) {
+            isEditing = true;
+            editPixel(event);
+        }
+        
+        function continueEditing(event) {
+            if (isEditing) {
+                editPixel(event);
+            }
+        }
+        
+        function stopEditing() {
+            isEditing = false;
+        }
+        
+        function editPixel(event) {
+            const rect = editorCanvas.getBoundingClientRect();
+            const x = Math.floor((event.clientX - rect.left) / 16); // 320/20 = 16
+            const y = Math.floor((event.clientY - rect.top) / 16);
+            
+            if (x >= 0 && x < 20 && y >= 0 && y < 20) {
+                editorTileData[y][x] = currentEditType;
+                renderEditor();
+            }
+        }
+        
+        // Editor controls - updated for larger size
+        function clearEditor() {
+            for (let py = 0; py < 20; py++) {
+                for (let px = 0; px < 20; px++) {
+                    editorTileData[py][px] = 'water';
+                }
+            }
+            renderEditor();
+        }
+        
+        function resetEditor() {
+            if (selectedTile) {
+                loadTileIntoEditor(selectedTile.x, selectedTile.y);
+            }
+        }
+        
+        function saveTileEdit() {
+            if (!selectedTile) {
+                log('No tile selected to save');
+                return;
+            }
+            
+            // Determine the primary type based on majority
+            const typeCounts = {};
+            
+            for (let py = 0; py < 20; py++) {
+                for (let px = 0; px < 20; px++) {
+                    const type = editorTileData[py][px];
+                    typeCounts[type] = (typeCounts[type] || 0) + 1;
+                }
+            }
+            
+            // Find the most common type
+            let maxCount = 0;
+            let newType = 'water';
+            for (const [type, count] of Object.entries(typeCounts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    newType = type;
+                }
+            }
+            
+            mapData[selectedTile.y][selectedTile.x] = newType;
+            
+            // Update coastline if needed
+            detectCoastline();
+            
+            log(`Tile (${selectedTile.x}, ${selectedTile.y}) updated to ${newType}`);
         }
         
         // Render the tile editor
