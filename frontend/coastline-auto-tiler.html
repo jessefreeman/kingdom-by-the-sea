@@ -376,7 +376,7 @@
 
         <div class="main-layout">
             <div class="map-section">
-                <canvas id="mapCanvas" width="2400" height="1920"></canvas>
+                <canvas id="mapCanvas" width="3600" height="2880"></canvas>
                 
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -399,6 +399,15 @@
             </div>
             
             <div class="sidebar">
+                <div class="tile-atlas-viewer">
+                    <h3>🗺️ Coastline Tile Atlas</h3>
+                    <p>47 Wang Tile Patterns</p>
+                    <canvas id="atlasCanvas" width="350" height="600" style="border: 1px solid #ccc; background: #f0f0f0;"></canvas>
+                    <div style="font-size: 10px; margin-top: 5px;">
+                        <strong>Legend:</strong> Brown = Land, Blue = Water, Green = Current Tile
+                    </div>
+                </div>
+                
                 <div class="tile-editor">
                     <h3>🎨 Tile Editor</h3>
                     <div id="tileInfo">Click on a tile to edit it</div>
@@ -435,7 +444,7 @@
         let coastlineData = new Set();
         let mapWidth = 10;    // Default medium size
         let mapHeight = 8;    // Default medium size  
-        let tileSize = 80;    // Much larger: 16 * 5 = 80 for better visibility
+        let tileSize = 120;   // Much larger: 16 * 7.5 = 120 for crisp visibility
         let selectedTile = null;
         let currentEditType = 'grass'; // Match game tile types
         
@@ -569,8 +578,131 @@
             }
         }
         
-        // Initialize the application
-        function init() {
+        // Render tile pattern that matches the atlas exactly
+        function renderAtlasTilePattern(ctx, x, y, size, autoTileInfo) {
+            const pattern = autoTileInfo.pattern;
+            
+            // Draw the 3x3 pattern grid just like in the atlas
+            const cellSize = Math.floor(size / 3);
+            
+            // 8-direction layout matching the atlas
+            const directions = [
+                { dx: -1, dy: -1, bit: 7 }, // NW
+                { dx: 0, dy: -1, bit: 0 },  // N  
+                { dx: 1, dy: -1, bit: 1 },  // NE
+                { dx: -1, dy: 0, bit: 6 },  // W
+                { dx: 0, dy: 0, bit: -1 },  // Center (current tile)
+                { dx: 1, dy: 0, bit: 2 },   // E
+                { dx: -1, dy: 1, bit: 5 },  // SW
+                { dx: 0, dy: 1, bit: 4 },   // S
+                { dx: 1, dy: 1, bit: 3 }    // SE
+            ];
+            
+            for (let i = 0; i < 9; i++) {
+                const cellX = x + (i % 3) * cellSize;
+                const cellY = y + Math.floor(i / 3) * cellSize;
+                const dir = directions[i];
+                
+                if (dir.bit === -1) {
+                    // Current tile (center) - coastline tile
+                    ctx.fillStyle = '#4CAF50'; // Green for coastline
+                } else {
+                    // Check if this direction has land in the pattern
+                    const hasLand = pattern & (1 << dir.bit);
+                    ctx.fillStyle = hasLand ? '#8B4513' : '#4682B4'; // Brown for land, blue for water
+                }
+                
+                ctx.fillRect(cellX, cellY, cellSize, cellSize);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 0.5;
+                ctx.strokeRect(cellX, cellY, cellSize, cellSize);
+            }
+            
+            // Add tile ID overlay
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.font = 'bold 10px monospace';
+            ctx.strokeText(autoTileInfo.tileIndex.toString(), x + 2, y + 12);
+            ctx.fillText(autoTileInfo.tileIndex.toString(), x + 2, y + 12);
+        }
+        
+        // Initialize tile atlas viewer
+        function initializeTileAtlas() {
+            const atlasCanvas = document.getElementById('atlasCanvas');
+            const atlasCtx = atlasCanvas.getContext('2d');
+            
+            renderTileAtlas(atlasCtx);
+        }
+        
+        // Render the complete tile atlas showing all 47 patterns
+        function renderTileAtlas(ctx) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            
+            const tileSize = 32;
+            const gridSize = 10;
+            const cols = 10;
+            const padding = 5;
+            
+            ctx.font = '8px monospace';
+            
+            COASTLINE_PATTERNS.forEach((pattern, index) => {
+                const col = index % cols;
+                const row = Math.floor(index / cols);
+                const x = col * (tileSize + padding) + padding;
+                const y = row * (tileSize + padding) + padding + 20;
+                
+                // Draw tile ID
+                ctx.fillStyle = 'black';
+                ctx.fillText(pattern.id.toString(), x, y - 5);
+                
+                // Draw the 3x3 pattern grid
+                const cellSize = Math.floor(tileSize / 3);
+                
+                // Draw the pattern based on the bit pattern
+                const directions = [
+                    { dx: -1, dy: -1, bit: 7 }, // NW
+                    { dx: 0, dy: -1, bit: 0 },  // N  
+                    { dx: 1, dy: -1, bit: 1 },  // NE
+                    { dx: -1, dy: 0, bit: 6 },  // W
+                    { dx: 0, dy: 0, bit: -1 },  // Center (current tile)
+                    { dx: 1, dy: 0, bit: 2 },   // E
+                    { dx: -1, dy: 1, bit: 5 },  // SW
+                    { dx: 0, dy: 1, bit: 4 },   // S
+                    { dx: 1, dy: 1, bit: 3 }    // SE
+                ];
+                
+                for (let i = 0; i < 9; i++) {
+                    const cellX = x + (i % 3) * cellSize;
+                    const cellY = y + Math.floor(i / 3) * cellSize;
+                    const dir = directions[i];
+                    
+                    if (dir.bit === -1) {
+                        // Current tile (center) - coastline tile
+                        ctx.fillStyle = '#4CAF50'; // Green for coastline
+                    } else {
+                        // Check if this direction has land in the pattern
+                        const hasLand = pattern.pattern & (1 << dir.bit);
+                        ctx.fillStyle = hasLand ? '#8B4513' : '#4682B4'; // Brown for land, blue for water
+                    }
+                    
+                    ctx.fillRect(cellX, cellY, cellSize - 1, cellSize - 1);
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(cellX, cellY, cellSize - 1, cellSize - 1);
+                }
+                
+                // Draw pattern name if short enough
+                if (pattern.name && pattern.name.length < 12) {
+                    ctx.fillStyle = 'black';
+                    ctx.font = '6px monospace';
+                    ctx.fillText(pattern.name, x, y + tileSize + 8);
+                }
+            });
+        }
+        
+        // Setup application
+        function setupApp() {
             // Build pattern lookup table for fast access
             patternLookup.clear();
             COASTLINE_PATTERNS.forEach(pattern => {
@@ -629,6 +761,69 @@
             editorCanvas.addEventListener('mousemove', continueEditing);
             editorCanvas.addEventListener('mouseup', stopEditing);
             editorCanvas.addEventListener('mouseleave', stopEditing);
+        }
+        
+        // Apply tile edit and update map in real-time
+        function applyTileEdit() {
+            if (!selectedTile) {
+                log('No tile selected for editing');
+                return;
+            }
+            
+            const { x, y } = selectedTile;
+            const oldType = mapData[y][x];
+            
+            // Update the tile type
+            mapData[y][x] = currentEditType;
+            
+            // Recalculate coastline and auto-tiles for the affected area
+            recalculateLocalArea(x, y);
+            
+            // Re-render the map to show changes immediately
+            renderMap();
+            
+            // Update the editor info
+            loadTileIntoEditor(x, y);
+            
+            log(`Tile (${x},${y}) changed from ${oldType} to ${currentEditType}`);
+        }
+        
+        // Recalculate coastline for a local area around edited tile
+        function recalculateLocalArea(centerX, centerY) {
+            // Clear old data for affected area
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const x = centerX + dx;
+                    const y = centerY + dy;
+                    if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
+                        coastlineData.delete(`${x},${y}`);
+                        autoTileData.delete(`${x},${y}`);
+                    }
+                }
+            }
+            
+            // Recalculate coastline for affected area
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const x = centerX + dx;
+                    const y = centerY + dy;
+                    if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
+                        // Only check water tiles for coastline
+                        if (mapData[y][x] === 'water') {
+                            // Check if this water tile is adjacent to land
+                            if (isAdjacentToLand(x, y)) {
+                                coastlineData.add(`${x},${y}`);
+                                
+                                // Calculate auto-tile pattern for this coast tile
+                                const autoTileResult = calculateCoastlineTile(x, y);
+                                if (autoTileResult) {
+                                    autoTileData.set(`${x},${y}`, autoTileResult);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         // Generate island using KBTS algorithm
@@ -1030,37 +1225,21 @@
                         }
                     }
                     
-                    mapCtx.fillStyle = color;
-                    mapCtx.fillRect(pixelX, pixelY, tileSize, tileSize);
-                    
-                    // Draw auto-tile info for coast tiles
-                    const autoTileInfo = autoTileData.get(`${x},${y}`);
-                    if (autoTileInfo && showCoast) {
-                        // Draw tile ID in corner
-                        mapCtx.fillStyle = 'white';
-                        mapCtx.font = '8px monospace';
-                        mapCtx.fillText(autoTileInfo.tileIndex.toString(), pixelX + 1, pixelY + 8);
-                        
-                        // Draw pattern bits as small dots
-                        const pattern = autoTileInfo.pattern;
-                        const dotSize = 1;
-                        const positions = [
-                            [pixelX + 4, pixelY + 2],   // N
-                            [pixelX + 6, pixelY + 2],   // NE
-                            [pixelX + 6, pixelY + 4],   // E
-                            [pixelX + 6, pixelY + 6],   // SE
-                            [pixelX + 4, pixelY + 6],   // S
-                            [pixelX + 2, pixelY + 6],   // SW
-                            [pixelX + 2, pixelY + 4],   // W
-                            [pixelX + 2, pixelY + 2]    // NW
-                        ];
-                        
-                        for (let bit = 0; bit < 8; bit++) {
-                            if (pattern & (1 << bit)) {
-                                mapCtx.fillStyle = 'yellow';
-                                mapCtx.fillRect(positions[bit][0], positions[bit][1], dotSize, dotSize);
-                            }
+                    // Draw the tile based on type
+                    if (tileType === 'water') {
+                        const autoTileInfo = autoTileData.get(`${x},${y}`);
+                        if (autoTileInfo && showCoast) {
+                            // Render the actual tile pattern from the atlas
+                            renderAtlasTilePattern(mapCtx, pixelX, pixelY, tileSize, autoTileInfo);
+                        } else {
+                            // Regular water tile
+                            mapCtx.fillStyle = COLORS.water;
+                            mapCtx.fillRect(pixelX, pixelY, tileSize, tileSize);
                         }
+                    } else {
+                        // Land tiles
+                        mapCtx.fillStyle = color;
+                        mapCtx.fillRect(pixelX, pixelY, tileSize, tileSize);
                     }
                     
                     // Highlight selected tile
@@ -1251,12 +1430,15 @@
                 }
             }
             
-            mapData[selectedTile.y][selectedTile.x] = newType;
+            mapData[selectedTile.y][selectedTile.x] = currentEditType;
             
-            // Update coastline if needed
-            detectCoastline();
+            // Recalculate coastline and auto-tiles for the affected area
+            recalculateLocalArea(selectedTile.x, selectedTile.y);
             
-            log(`Tile (${selectedTile.x}, ${selectedTile.y}) updated to ${newType}`);
+            // Re-render the map to show changes immediately
+            renderMap();
+            
+            log(`Tile (${selectedTile.x}, ${selectedTile.y}) updated to ${currentEditType}`);
         }
         
         // Render the tile editor
@@ -1429,6 +1611,13 @@
             const timestamp = new Date().toLocaleTimeString();
             debugOutput.innerHTML += `<div>[${timestamp}] ${message}</div>`;
             debugOutput.scrollTop = debugOutput.scrollHeight;
+        }
+        
+        // Initialize the application
+        function init() {
+            log('🚀 KBTS Coastline Auto-Tiler initialized');
+            initializeTileAtlas();
+            setupApp();
         }
         
         // Initialize when page loads
