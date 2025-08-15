@@ -377,28 +377,8 @@
         <div class="main-layout">
             <div class="map-section">
                 <canvas id="mapCanvas" width="3600" height="2880"></canvas>
-                
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <span class="stat-number" id="landTiles">0</span>
-                        <span class="stat-label">Land Tiles</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-number" id="waterTiles">0</span>
-                        <span class="stat-label">Water Tiles</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-number" id="coastTiles">0</span>
-                        <span class="stat-label">Coast Tiles</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-number" id="totalTiles">0</span>
-                        <span class="stat-label">Total Tiles</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="sidebar">
+
+                <!-- Tile Atlas moved under the preview -->
                 <div class="tile-atlas-viewer">
                     <h3>🗺️ Coastline Tile Atlas</h3>
                     <p>47 Wang Tile Patterns</p>
@@ -407,7 +387,9 @@
                         <strong>Legend:</strong> Brown = Land, Blue = Water, Green = Current Tile
                     </div>
                 </div>
-                
+            </div>
+            
+            <div class="sidebar">
                 <div class="tile-editor">
                     <h3>🎨 Tile Editor</h3>
                     <div id="tileInfo">Click on a tile to edit it</div>
@@ -756,11 +738,11 @@
                 });
             });
             
-            // Editor canvas
-            editorCanvas.addEventListener('mousedown', startEditing);
-            editorCanvas.addEventListener('mousemove', continueEditing);
-            editorCanvas.addEventListener('mouseup', stopEditing);
-            editorCanvas.addEventListener('mouseleave', stopEditing);
+            // Editor canvas - remove complex editing
+            // editorCanvas.addEventListener('mousedown', startEditing);
+            // editorCanvas.addEventListener('mousemove', continueEditing);
+            // editorCanvas.addEventListener('mouseup', stopEditing);
+            // editorCanvas.addEventListener('mouseleave', stopEditing);
         }
         
         // Apply tile edit and update map in real-time
@@ -1179,20 +1161,10 @@
             return count;
         }
         
-        // Update statistics display - KBTS compatible
+        // Update statistics display - DISABLED (stats grid removed)
         function updateStats() {
-            const grassCount = countTiles('grass');
-            const waterCount = countTiles('water');
-            const forestCount = countTiles('forest');
-            const hillCount = countTiles('hill');
-            const mountainCount = countTiles('mountain');
-            const coastCount = coastlineData.size;
-            const totalCount = mapWidth * mapHeight;
-            
-            document.getElementById('landTiles').textContent = grassCount + forestCount + hillCount + mountainCount;
-            document.getElementById('waterTiles').textContent = waterCount;
-            document.getElementById('coastTiles').textContent = coastCount;
-            document.getElementById('totalTiles').textContent = totalCount;
+            // Stats grid was removed, so this function does nothing
+            return;
         }
         
         // Render the map - KBTS compatible with auto-tile visualization
@@ -1285,23 +1257,39 @@
         // Handle map canvas clicks
         function handleMapClick(event) {
             const rect = mapCanvas.getBoundingClientRect();
-            const x = Math.floor((event.clientX - rect.left) / tileSize);
-            const y = Math.floor((event.clientY - rect.top) / tileSize);
+            
+            // Calculate the actual display size per tile
+            const displayTileWidth = rect.width / mapWidth;
+            const displayTileHeight = rect.height / mapHeight;
+            
+            const x = Math.floor((event.clientX - rect.left) / displayTileWidth);
+            const y = Math.floor((event.clientY - rect.top) / displayTileHeight);
+            
+            console.log(`Clicked at display (${event.clientX - rect.left}, ${event.clientY - rect.top}), tile (${x}, ${y})`);
+            console.log(`Canvas display size: ${rect.width}x${rect.height}, map size: ${mapWidth}x${mapHeight}`);
             
             if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
                 selectedTile = { x, y };
                 loadTileIntoEditor(x, y);
                 renderMap();
+                log(`🎯 Selected tile at (${x}, ${y})`);
             }
         }
         
                 // Load a tile into the editor - KBTS compatible with auto-tile info
         function loadTileIntoEditor(x, y) {
-            if (!mapData[y] || !mapData[y][x]) return;
+            console.log(`🔧 Loading tile (${x}, ${y}) into editor`);
+            
+            if (!mapData[y] || !mapData[y][x]) {
+                console.log(`❌ No tile data found at (${x}, ${y})`);
+                return;
+            }
             
             const tileType = mapData[y][x];
             const isCoast = coastlineData.has(`${x},${y}`);
             const autoTileInfo = autoTileData.get(`${x},${y}`);
+            
+            console.log(`Tile info: type=${tileType}, coast=${isCoast}, autoTile=${!!autoTileInfo}`);
             
             let infoHtml = `
                 <strong>Tile (${x}, ${y})</strong><br>
@@ -1318,19 +1306,39 @@
             
             document.getElementById('tileInfo').innerHTML = infoHtml;
             
-            // Initialize editor with current tile - larger 20x20 pixel grid for better editing
-            const editorSize = 320;
-            const pixelSize = editorSize / 20; // 20x20 pixel grid
+            // Render the tile in the editor canvas
+            renderTileInEditor(tileType, autoTileInfo);
             
-            editorTileData = [];
-            for (let py = 0; py < 20; py++) {
-                editorTileData[py] = [];
-                for (let px = 0; px < 20; px++) {
-                    editorTileData[py][px] = tileType;
-                }
+            log(`📝 Loaded tile (${x}, ${y}) - ${tileType} into editor`);
+        }
+        
+        // Render the current tile in the editor canvas
+        function renderTileInEditor(tileType, autoTileInfo) {
+            console.log(`🎨 Rendering tile in editor: type=${tileType}, autoTile=${!!autoTileInfo}`);
+            
+            const editorSize = 320;
+            editorCtx.clearRect(0, 0, editorSize, editorSize);
+            
+            if (tileType === 'water' && autoTileInfo) {
+                // Show the auto-tile pattern for coastline tiles
+                console.log(`Rendering auto-tile pattern: ${autoTileInfo.patternName}`);
+                renderAtlasTilePattern(editorCtx, 0, 0, editorSize, autoTileInfo);
+            } else {
+                // Show solid color for land tiles
+                console.log(`Rendering solid color tile: ${tileType}`);
+                editorCtx.fillStyle = COLORS[tileType] || COLORS.water;
+                editorCtx.fillRect(0, 0, editorSize, editorSize);
+                
+                // Add a label
+                editorCtx.fillStyle = 'white';
+                editorCtx.strokeStyle = 'black';
+                editorCtx.lineWidth = 2;
+                editorCtx.font = 'bold 24px monospace';
+                editorCtx.strokeText(tileType.toUpperCase(), 10, 40);
+                editorCtx.fillText(tileType.toUpperCase(), 10, 40);
             }
             
-            renderEditor();
+            console.log(`✅ Editor canvas updated`);
         }
         
         // Render the tile editor - updated for larger size
@@ -1377,6 +1385,8 @@
             isEditing = false;
         }
         
+        // EDITOR FUNCTIONS DISABLED - Simplified editor just shows tiles
+        /*
         function editPixel(event) {
             const rect = editorCanvas.getBoundingClientRect();
             const x = Math.floor((event.clientX - rect.left) / 16); // 320/20 = 16
@@ -1387,6 +1397,7 @@
                 renderEditor();
             }
         }
+        */
         
         // Editor controls - updated for larger size
         function clearEditor() {
@@ -1410,35 +1421,22 @@
                 return;
             }
             
-            // Determine the primary type based on majority
-            const typeCounts = {};
+            const { x, y } = selectedTile;
+            const oldType = mapData[y][x];
             
-            for (let py = 0; py < 20; py++) {
-                for (let px = 0; px < 20; px++) {
-                    const type = editorTileData[py][px];
-                    typeCounts[type] = (typeCounts[type] || 0) + 1;
-                }
-            }
-            
-            // Find the most common type
-            let maxCount = 0;
-            let newType = 'water';
-            for (const [type, count] of Object.entries(typeCounts)) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    newType = type;
-                }
-            }
-            
-            mapData[selectedTile.y][selectedTile.x] = currentEditType;
+            // Update the tile type to the currently selected type
+            mapData[y][x] = currentEditType;
             
             // Recalculate coastline and auto-tiles for the affected area
-            recalculateLocalArea(selectedTile.x, selectedTile.y);
+            recalculateLocalArea(x, y);
             
             // Re-render the map to show changes immediately
             renderMap();
             
-            log(`Tile (${selectedTile.x}, ${selectedTile.y}) updated to ${currentEditType}`);
+            // Update the editor to show the new tile
+            loadTileIntoEditor(x, y);
+            
+            log(`Tile (${x},${y}) changed from ${oldType} to ${currentEditType}`);
         }
         
         // Render the tile editor
@@ -1485,6 +1483,8 @@
             isEditing = false;
         }
         
+        // DISABLED - duplicate editPixel function
+        /*
         function editPixel(event) {
             const rect = editorCanvas.getBoundingClientRect();
             const x = Math.floor((event.clientX - rect.left) / 20); // 200/10 = 20
@@ -1495,6 +1495,7 @@
                 renderEditor();
             }
         }
+        */
         
         // Editor controls
         function clearEditor() {
