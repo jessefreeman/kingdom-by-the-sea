@@ -1,0 +1,148 @@
+{
+  "name": "Marching Squares Coastline Tiles",
+  "description": "16 fundamental coastline configurations for smooth boundary detection",
+  "tileSize": 32,
+  "atlasWidth": 4,
+  "atlasHeight": 4,
+  "configurations": [
+    {
+      "id": 1,
+      "name": "SW Corner",
+      "pattern": "0001",
+      "uvX": 0,
+      "uvY": 0,
+      "type": "corner",
+      "description": "Convex corner with land in SW"
+    },
+    {
+      "id": 2,
+      "name": "SE Corner",
+      "pattern": "0010",
+      "uvX": 1,
+      "uvY": 0,
+      "type": "corner",
+      "description": "Convex corner with land in SE"
+    },
+    {
+      "id": 4,
+      "name": "NE Corner",
+      "pattern": "0100",
+      "uvX": 2,
+      "uvY": 0,
+      "type": "corner",
+      "description": "Convex corner with land in NE"
+    },
+    {
+      "id": 8,
+      "name": "NW Corner",
+      "pattern": "1000",
+      "uvX": 3,
+      "uvY": 0,
+      "type": "corner",
+      "description": "Convex corner with land in NW"
+    },
+    {
+      "id": 3,
+      "name": "South Edge",
+      "pattern": "0011",
+      "uvX": 0,
+      "uvY": 1,
+      "type": "edge",
+      "description": "Straight edge with land on south"
+    },
+    {
+      "id": 6,
+      "name": "East Edge",
+      "pattern": "0110",
+      "uvX": 1,
+      "uvY": 1,
+      "type": "edge",
+      "description": "Straight edge with land on east"
+    },
+    {
+      "id": 12,
+      "name": "North Edge",
+      "pattern": "1100",
+      "uvX": 2,
+      "uvY": 1,
+      "type": "edge",
+      "description": "Straight edge with land on north"
+    },
+    {
+      "id": 9,
+      "name": "West Edge",
+      "pattern": "1001",
+      "uvX": 3,
+      "uvY": 1,
+      "type": "edge",
+      "description": "Straight edge with land on west"
+    },
+    {
+      "id": 5,
+      "name": "Vertical Split",
+      "pattern": "0101",
+      "uvX": 0,
+      "uvY": 2,
+      "type": "vertical",
+      "description": "Diagonal split NE-SW"
+    },
+    {
+      "id": 10,
+      "name": "Horizontal Split",
+      "pattern": "1010",
+      "uvX": 1,
+      "uvY": 2,
+      "type": "horizontal",
+      "description": "Diagonal split NW-SE"
+    },
+    {
+      "id": 7,
+      "name": "NW Concave",
+      "pattern": "0111",
+      "uvX": 2,
+      "uvY": 2,
+      "type": "concave",
+      "description": "Concave corner missing NW"
+    },
+    {
+      "id": 11,
+      "name": "NE Concave",
+      "pattern": "1011",
+      "uvX": 3,
+      "uvY": 2,
+      "type": "concave",
+      "description": "Concave corner missing NE"
+    },
+    {
+      "id": 13,
+      "name": "SE Concave",
+      "pattern": "1101",
+      "uvX": 0,
+      "uvY": 3,
+      "type": "concave",
+      "description": "Concave corner missing SE"
+    },
+    {
+      "id": 14,
+      "name": "SW Concave",
+      "pattern": "1110",
+      "uvX": 1,
+      "uvY": 3,
+      "type": "concave",
+      "description": "Concave corner missing SW"
+    }
+  ],
+  "usage": {
+    "textureAtlas": "marching-squares-coastline.png",
+    "normalizedUV": true,
+    "pixelPerfect": true,
+    "cornerContinuity": "guaranteed"
+  },
+  "advantages": [
+    "Only 16 configurations vs 256 in 8-neighbor systems",
+    "Zero duplicate assignments guaranteed",
+    "Pixel-perfect corner matching",
+    "Manageable texture atlas size",
+    "Proven computer graphics algorithm"
+  ]
+}

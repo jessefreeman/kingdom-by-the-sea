@@ -411,14 +411,6 @@
                             <p>Select a tile to see pattern details</p>
                         </div>
                     </div>
-                    
-                    <div class="pattern-selector" style="margin-top: 20px;">
-                        <h4>Available Patterns</h4>
-                        <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">Click to edit directly:</p>
-                        <div class="pattern-grid" id="patternGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; max-width: 200px;">
-                            <!-- Patterns will be populated here -->
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -482,7 +474,6 @@
         let currentMap = null;
         let coastlineData = {};
         let mapSize = { w: 24, h: 18 };
-        let currentTileSize = 20; // Track current tile size for click handling
         
         // Load configuration on startup
         async function loadMarchingSquaresConfig() {
@@ -679,7 +670,6 @@
             
             const ctx = canvas.getContext('2d');
             const tileSize = Math.min(canvas.width / mapSize.w, canvas.height / mapSize.h);
-            currentTileSize = tileSize; // Store for click handling
             
             // Clear canvas
             ctx.fillStyle = '#1e3a8a'; // Deep water blue
@@ -694,45 +684,20 @@
                 }
             }
             
-            // Highlight coastline tiles and render custom tile data
+            // Highlight coastline tiles
             Object.values(coastlineData).forEach(tile => {
                 const x = tile.x * tileSize;
                 const y = tile.y * tileSize;
                 
-                // Check if we have custom tile data for this pattern
-                const customData = tilePixelData.get(tile.config.id);
-                
-                if (customData && tileSize >= 10) {
-                    // Render custom tile data
-                    const pixelSize = tileSize / 20;
-                    for (let py = 0; py < 20; py++) {
-                        for (let px = 0; px < 20; px++) {
-                            const pixelIndex = py * 20 + px;
-                            if (customData[pixelIndex]) {
-                                ctx.fillStyle = '#8B4513'; // Land brown
-                                ctx.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
-                            }
-                        }
-                    }
-                } else {
-                    // Default rendering - highlight with semi-transparent blue
-                    ctx.fillStyle = 'rgba(59, 130, 246, 0.7)';
-                    ctx.fillRect(x, y, tileSize, tileSize);
-                }
-                
-                // Add border to make tiles more clickable
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, tileSize, tileSize);
+                // Highlight with semi-transparent blue
+                ctx.fillStyle = 'rgba(59, 130, 246, 0.7)';
+                ctx.fillRect(x, y, tileSize, tileSize);
                 
                 // Draw tile ID
                 ctx.fillStyle = 'white';
-                ctx.font = `bold ${Math.max(8, tileSize/3)}px Arial`;
+                ctx.font = `${Math.max(8, tileSize/3)}px Arial`;
                 ctx.textAlign = 'center';
-                ctx.shadowColor = 'black';
-                ctx.shadowBlur = 2;
                 ctx.fillText(tile.config.id, x + tileSize/2, y + tileSize/2 + 3);
-                ctx.shadowBlur = 0;
             });
             
             // Draw grid
@@ -1340,11 +1305,6 @@
             }
         }
         
-        // Alias for renderMap to match the editor calls
-        function renderIsland() {
-            renderMap();
-        }
-        
         // Variables for tile editing
         let currentEditingPattern = null;
         let currentEditingPos = null;
@@ -1361,23 +1321,17 @@
                 const scaleX = mapCanvas.width / rect.width;
                 const scaleY = mapCanvas.height / rect.height;
                 
-                const x = Math.floor((e.clientX - rect.left) * scaleX / currentTileSize);
-                const y = Math.floor((e.clientY - rect.top) * scaleY / currentTileSize);
+                const x = Math.floor((e.clientX - rect.left) * scaleX / 20); // 20px per tile
+                const y = Math.floor((e.clientY - rect.top) * scaleY / 20);
                 
                 // Check if this position has a coastline tile
                 const tileKey = `${x},${y}`;
-                console.log(`Clicked at grid position (${x}, ${y}), tileKey: ${tileKey}`);
-                console.log('Available coastline tiles:', Object.keys(coastlineData));
-                
-                if (coastlineData[tileKey]) {
-                    const pattern = coastlineData[tileKey].config.id;
-                    console.log(`Found coastline tile at (${x}, ${y}) with pattern ${pattern}`);
+                if (currentTileMap.has(tileKey)) {
+                    const pattern = currentTileMap.get(tileKey);
                     loadTileIntoEditor(pattern, x, y);
                     
                     // Highlight selected tile
                     highlightSelectedTile(x, y);
-                } else {
-                    console.log(`No coastline tile found at (${x}, ${y})`);
                 }
             });
             
@@ -1397,7 +1351,7 @@
             const ctx = canvas.getContext('2d');
             ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = 3;
-            ctx.strokeRect(x * currentTileSize, y * currentTileSize, currentTileSize, currentTileSize);
+            ctx.strokeRect(x * 20, y * 20, 20, 20);
             
             // Store selection
             selectedTilePos = { x, y };
@@ -1408,11 +1362,7 @@
             currentEditingPos = { x: tileX, y: tileY };
             
             // Update title
-            if (tileX >= 0 && tileY >= 0) {
-                document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern} at (${tileX}, ${tileY})`;
-            } else {
-                document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern}`;
-            }
+            document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern} at (${tileX}, ${tileY})`;
             
             // Load pattern info
             updatePatternInfo(pattern);
@@ -1421,20 +1371,14 @@
             const editorCanvas = document.getElementById('editorCanvas');
             const editorCtx = editorCanvas.getContext('2d');
             
-            // Clear the editor first
-            editorCtx.fillStyle = '#4169E1'; // Water blue
-            editorCtx.fillRect(0, 0, editorCanvas.width, editorCanvas.height);
-            
             // Get current tile data or create default
-            let tileData = tilePixelData.get(pattern); // Use pattern as key for custom tile data
+            const tileKey = `${tileX},${tileY}`;
+            let tileData = customTileData.get(tileKey);
             
-            if (!tileData) {
+            if (!tileData && marchingSquaresConfig.patterns[pattern]) {
                 // Create default tile data from configuration
                 tileData = createDefaultTileData(pattern);
-                tilePixelData.set(pattern, tileData);
-                console.log(`Created default tile data for pattern ${pattern}`);
-            } else {
-                console.log(`Loaded existing tile data for pattern ${pattern}`);
+                customTileData.set(tileKey, tileData);
             }
             
             if (tileData) {
@@ -1456,12 +1400,7 @@
         
         function updatePatternInfo(pattern) {
             const info = document.getElementById('patternInfo');
-            
-            // Find the configuration with this pattern ID
-            let config = null;
-            if (marchingSquaresConfig && marchingSquaresConfig.configurations) {
-                config = marchingSquaresConfig.configurations.find(c => c.id === pattern);
-            }
+            const config = marchingSquaresConfig.patterns[pattern];
             
             if (config) {
                 info.innerHTML = `
@@ -1482,121 +1421,43 @@
             // Create a 20x20 array based on the pattern type
             const data = new Array(400).fill(false);
             
-            // Map pattern IDs to basic shapes based on Marching Squares logic
+            // Simple pattern-based generation
             switch (pattern) {
                 case 0: // All water
-                    break;
-                case 1: // SW Corner (bottom-left)
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 2: // SE Corner (bottom-right)
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 3: // South Edge (bottom)
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 0; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 4: // NE Corner (top-right)
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 5: // SW-NE Diagonal
-                    for (let y = 0; y < 20; y++) {
-                        for (let x = 0; x < 20; x++) {
-                            if ((y < 10 && x >= 10) || (y >= 10 && x < 10)) {
-                                data[y * 20 + x] = true;
-                            }
-                        }
-                    }
-                    break;
-                case 6: // East Edge (right)
-                    for (let y = 0; y < 20; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 7: // SE Concave (missing NW)
-                    data.fill(true);
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = false;
-                        }
-                    }
-                    break;
-                case 8: // NW Corner (top-left)
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 9: // West Edge (left)
-                    for (let y = 0; y < 20; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 10: // NW-SE Diagonal
-                    for (let y = 0; y < 20; y++) {
-                        for (let x = 0; x < 20; x++) {
-                            if ((y < 10 && x < 10) || (y >= 10 && x >= 10)) {
-                                data[y * 20 + x] = true;
-                            }
-                        }
-                    }
-                    break;
-                case 11: // SW Concave (missing NE)
-                    data.fill(true);
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = false;
-                        }
-                    }
-                    break;
-                case 12: // North Edge (top)
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 0; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 13: // NW Concave (missing SE)
-                    data.fill(true);
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = false;
-                        }
-                    }
-                    break;
-                case 14: // NE Concave (missing SW)
-                    data.fill(true);
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = false;
-                        }
-                    }
                     break;
                 case 15: // All land
                     data.fill(true);
                     break;
+                case 1: // Bottom-left corner
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 2: // Bottom-right corner
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 4: // Top-right corner
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 8: // Top-left corner
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
                 default:
-                    // For unknown patterns, create a basic shape
+                    // For other patterns, create a basic shape
                     for (let y = 5; y < 15; y++) {
                         for (let x = 5; x < 15; x++) {
                             data[y * 20 + x] = true;
@@ -1608,6 +1469,7 @@
         }
         
         // Editor interaction functions
+        let isEditing = false;
         let currentEditMode = 'land'; // 'land' or 'water'
         
         function startEditing(e) {
@@ -1624,12 +1486,12 @@
             const y = Math.floor((e.clientY - rect.top) / 8);
             
             if (x >= 0 && x < 20 && y >= 0 && y < 20) {
-                const pattern = currentEditingPattern;
-                let tileData = tilePixelData.get(pattern);
+                const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
+                let tileData = customTileData.get(tileKey);
                 
                 if (!tileData) {
                     tileData = createDefaultTileData(currentEditingPattern);
-                    tilePixelData.set(pattern, tileData);
+                    customTileData.set(tileKey, tileData);
                 }
                 
                 const pixelIndex = y * 20 + x;
@@ -1647,11 +1509,6 @@
                 if (selectedTilePos) {
                     highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
                 }
-                
-                // Update pattern grid
-                if (currentEditingPattern !== null) {
-                    drawPatternInCell(currentEditingPattern);
-                }
             }
         }
         
@@ -1660,10 +1517,11 @@
         }
         
         function clearTile() {
-            if (!currentEditingPattern) return;
+            if (!currentEditingPos) return;
             
+            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
             const tileData = new Array(400).fill(false);
-            tilePixelData.set(currentEditingPattern, tileData);
+            customTileData.set(tileKey, tileData);
             
             // Redraw editor
             const editorCanvas = document.getElementById('editorCanvas');
@@ -1676,18 +1534,14 @@
             if (selectedTilePos) {
                 highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
             }
-            
-            // Update pattern grid
-            if (currentEditingPattern !== null) {
-                drawPatternInCell(currentEditingPattern);
-            }
         }
         
         function resetTileToDefault() {
-            if (!currentEditingPattern) return;
+            if (!currentEditingPos || !currentEditingPattern) return;
             
+            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
             const tileData = createDefaultTileData(currentEditingPattern);
-            tilePixelData.set(currentEditingPattern, tileData);
+            customTileData.set(tileKey, tileData);
             
             // Redraw editor
             const editorCanvas = document.getElementById('editorCanvas');
@@ -1708,11 +1562,6 @@
             if (selectedTilePos) {
                 highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
             }
-            
-            // Update pattern grid
-            if (currentEditingPattern !== null) {
-                drawPatternInCell(currentEditingPattern);
-            }
         }
         
         function saveTileChanges() {
@@ -1723,12 +1572,13 @@
         }
         
         function updateTilePreview() {
-            if (!currentEditingPattern) return;
+            if (!currentEditingPos) return;
             
             const previewCanvas = document.getElementById('previewCanvas');
             const previewCtx = previewCanvas.getContext('2d');
             
-            const tileData = tilePixelData.get(currentEditingPattern);
+            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
+            const tileData = customTileData.get(tileKey);
             
             if (tileData) {
                 // Draw scaled down version (4x4 pixels per tile pixel)
@@ -1744,82 +1594,10 @@
             }
         }
         
-        function populatePatternGrid() {
-            const grid = document.getElementById('patternGrid');
-            if (!grid) return;
-            
-            let html = '';
-            
-            // Create all 16 patterns (0-15)
-            for (let i = 0; i < 16; i++) {
-                html += `
-                    <div class="pattern-cell" onclick="selectPatternForEditing(${i})" 
-                         style="border: 1px solid #ccc; cursor: pointer; padding: 2px; background: white;">
-                        <canvas id="pattern-${i}" width="40" height="40" 
-                                style="display: block; image-rendering: pixelated;"></canvas>
-                        <div style="text-align: center; font-size: 0.7em; margin-top: 2px;">${i}</div>
-                    </div>
-                `;
-            }
-            
-            grid.innerHTML = html;
-            
-            // Draw all patterns
-            setTimeout(() => {
-                for (let i = 0; i < 16; i++) {
-                    drawPatternInCell(i);
-                }
-            }, 100);
-        }
-        
-        function drawPatternInCell(pattern) {
-            const canvas = document.getElementById(`pattern-${pattern}`);
-            if (!canvas) return;
-            
-            const ctx = canvas.getContext('2d');
-            
-            // Clear with water color
-            ctx.fillStyle = '#4169E1';
-            ctx.fillRect(0, 0, 40, 40);
-            
-            // Get or create tile data
-            let tileData = tilePixelData.get(pattern);
-            if (!tileData) {
-                tileData = createDefaultTileData(pattern);
-                tilePixelData.set(pattern, tileData);
-            }
-            
-            // Draw the pattern (2x2 pixels per tile pixel)
-            for (let y = 0; y < 20; y++) {
-                for (let x = 0; x < 20; x++) {
-                    const pixelIndex = y * 20 + x;
-                    if (tileData[pixelIndex]) {
-                        ctx.fillStyle = '#8B4513'; // Land brown
-                        ctx.fillRect(x * 2, y * 2, 2, 2);
-                    }
-                }
-            }
-        }
-        
-        function selectPatternForEditing(pattern) {
-            loadTileIntoEditor(pattern, -1, -1); // Use -1,-1 to indicate pattern selector origin
-            
-            // Highlight selected pattern
-            document.querySelectorAll('.pattern-cell').forEach(cell => {
-                cell.style.border = '1px solid #ccc';
-            });
-            
-            const selectedCell = document.querySelector(`#pattern-${pattern}`).parentElement;
-            if (selectedCell) {
-                selectedCell.style.border = '2px solid #ff0000';
-            }
-        }
-        
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             loadMarchingSquaresConfig();
             initializeTileEditor();
-            populatePatternGrid();
         });
     </script>
 </body>
