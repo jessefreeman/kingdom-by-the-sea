@@ -332,6 +332,7 @@
                 
                 <button onclick="generateIsland()">🏝️ Generate Island</button>
                 <button onclick="detectCoastline()" class="secondary">🌊 Detect Coastline</button>
+                <button onclick="applyAutoTiling()" class="secondary">🎯 Apply Auto-Tiling</button>
                 <button onclick="clearCoastline()" class="danger">🧹 Clear Coastline</button>
             </div>
             
@@ -364,7 +365,7 @@
 
         <div class="main-layout">
             <div class="map-section">
-                <canvas id="mapCanvas" width="640" height="480"></canvas>
+                <canvas id="mapCanvas" width="1440" height="1152"></canvas>
                 
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -423,7 +424,7 @@
         let coastlineData = new Set();
         let mapWidth = 10;    // Default medium size
         let mapHeight = 8;    // Default medium size  
-        let tileSize = 16;    // Fixed 16x16 tiles
+        let tileSize = 48;    // 3x larger: 16 * 3 = 48
         let selectedTile = null;
         let currentEditType = 'grass'; // Match game tile types
         
@@ -458,6 +459,86 @@
             large: { w: 12, h: 8 }
         };
         
+        // 47-tile Wang pattern definitions for coastlines (from coastlineAutoTiler.ts)
+        const COASTLINE_PATTERNS = [
+            // Basic isolated patterns
+            { id: 0, pattern: 0b00000000, name: "Deep Water" },
+            { id: 1, pattern: 0b00000001, name: "North Coast" },
+            { id: 2, pattern: 0b00000100, name: "East Coast" },
+            { id: 3, pattern: 0b00010000, name: "South Coast" },
+            { id: 4, pattern: 0b01000000, name: "West Coast" },
+            
+            // Straight coastlines
+            { id: 5, pattern: 0b00010001, name: "Vertical Coast" },
+            { id: 6, pattern: 0b01000100, name: "Horizontal Coast" },
+            
+            // Outside corners (convex)
+            { id: 7, pattern: 0b00000101, name: "NE Outer Corner" },
+            { id: 8, pattern: 0b00010100, name: "SE Outer Corner" },
+            { id: 9, pattern: 0b01010000, name: "SW Outer Corner" },
+            { id: 10, pattern: 0b01000001, name: "NW Outer Corner" },
+            
+            // T-junctions
+            { id: 11, pattern: 0b00010101, name: "North T-Junction" },
+            { id: 12, pattern: 0b01010100, name: "East T-Junction" },
+            { id: 13, pattern: 0b01010001, name: "South T-Junction" },
+            { id: 14, pattern: 0b01000101, name: "West T-Junction" },
+            
+            // Cross pattern
+            { id: 15, pattern: 0b01010101, name: "Cross Coast" },
+            
+            // Inside corners (concave) - critical for smooth coastlines!
+            { id: 16, pattern: 0b00000111, name: "NE Inside Corner" },
+            { id: 17, pattern: 0b00011100, name: "SE Inside Corner" },
+            { id: 18, pattern: 0b01110000, name: "SW Inside Corner" },
+            { id: 19, pattern: 0b11000001, name: "NW Inside Corner" },
+            
+            // Diagonal-only connections
+            { id: 20, pattern: 0b00000010, name: "NE Diagonal" },
+            { id: 21, pattern: 0b00001000, name: "SE Diagonal" },
+            { id: 22, pattern: 0b00100000, name: "SW Diagonal" },
+            { id: 23, pattern: 0b10000000, name: "NW Diagonal" },
+            
+            // Cardinal + diagonal combinations
+            { id: 24, pattern: 0b00000011, name: "North + NE" },
+            { id: 25, pattern: 0b00001100, name: "East + SE" },
+            { id: 26, pattern: 0b00110000, name: "South + SW" },
+            { id: 27, pattern: 0b11000000, name: "West + NW" },
+            
+            // Complex inside corners
+            { id: 28, pattern: 0b01000111, name: "Complex NE Inside" },
+            { id: 29, pattern: 0b01011100, name: "Complex SE Inside" },
+            { id: 30, pattern: 0b01110001, name: "Complex SW Inside" },
+            { id: 31, pattern: 0b11000101, name: "Complex NW Inside" },
+            
+            // Triple connections
+            { id: 32, pattern: 0b00011111, name: "Triple NE" },
+            { id: 33, pattern: 0b01111100, name: "Triple SE" },
+            { id: 34, pattern: 0b11110000, name: "Triple SW" },
+            { id: 35, pattern: 0b11000011, name: "Triple NW" },
+            
+            // Almost full with missing diagonals
+            { id: 36, pattern: 0b01010111, name: "Full minus NW" },
+            { id: 37, pattern: 0b01011101, name: "Full minus SW" },
+            { id: 38, pattern: 0b01110101, name: "Full minus SE" },
+            { id: 39, pattern: 0b11010101, name: "Full minus NE" },
+            
+            // Double diagonal patterns
+            { id: 40, pattern: 0b00001010, name: "NE+SE Diagonals" },
+            { id: 41, pattern: 0b00101000, name: "SE+SW Diagonals" },
+            { id: 42, pattern: 0b10100000, name: "SW+NW Diagonals" },
+            { id: 43, pattern: 0b10000010, name: "NW+NE Diagonals" },
+            
+            // Near-full patterns
+            { id: 44, pattern: 0b01111111, name: "Almost Full A" },
+            { id: 45, pattern: 0b11111101, name: "Almost Full B" },
+            { id: 46, pattern: 0b11111111, name: "Surrounded" }
+        ];
+        
+        // Auto-tiling data
+        let autoTileData = new Map(); // Store calculated auto-tile info for each coast tile
+        let patternLookup = new Map(); // Fast pattern lookup
+        
         // Tile editor state
         let editorTileData = [];
         let isEditing = false;
@@ -479,9 +560,15 @@
         
         // Initialize the application
         function init() {
+            // Build pattern lookup table for fast access
+            patternLookup.clear();
+            COASTLINE_PATTERNS.forEach(pattern => {
+                patternLookup.set(pattern.pattern, pattern.id);
+            });
+            
             updateMapSize();
             setupEventListeners();
-            log('Coastline Auto-Tiler initialized. Generate an island to begin!');
+            log('Coastline Auto-Tiler with Auto-Tiling initialized. Generate an island to begin!');
         }
         
         // Update map dimensions based on KBTS game sizes
@@ -641,7 +728,7 @@
             log(`KBTS island generated: ${countTiles('grass')} grass, ${countTiles('water')} water, ${countTiles('forest')} forest, ${countTiles('hill')} hill, ${countTiles('mountain')} mountain tiles`);
         }
         
-        // Detect coastline tiles (water tiles that touch land in 8 directions) - KBTS compatible
+        // Detect coastline tiles and calculate auto-tiles
         function detectCoastline() {
             if (mapData.length === 0) {
                 log('Generate an island first!');
@@ -649,10 +736,11 @@
             }
             
             coastlineData.clear();
+            autoTileData.clear();
             debugSteps = [];
             currentStep = 0;
             
-            log('🌊 Starting KBTS coastline detection...');
+            log('🌊 Starting KBTS coastline detection with auto-tiling...');
             
             if (debugMode) {
                 log('Debug mode: analyzing each tile step by step');
@@ -665,39 +753,24 @@
                     // Only check water tiles
                     if (mapData[y][x] !== 'water') continue;
                     
-                    // Check 8 neighboring tiles for non-water (land) tiles
-                    let hasLandNeighbor = false;
-                    
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            if (dx === 0 && dy === 0) continue; // Skip center tile
-                            
-                            const nx = x + dx;
-                            const ny = y + dy;
-                            
-                            // Check bounds
-                            if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
-                                const neighborType = mapData[ny][nx];
-                                // Any non-water tile counts as land
-                                if (neighborType !== 'water') {
-                                    hasLandNeighbor = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (hasLandNeighbor) break;
-                    }
-                    
-                    if (hasLandNeighbor) {
+                    // Check if this water tile is adjacent to land
+                    if (isAdjacentToLand(x, y)) {
                         coastlineData.add(`${x},${y}`);
                         coastCount++;
                         
+                        // Calculate auto-tile pattern for this coast tile
+                        const autoTileResult = calculateCoastlineTile(x, y);
+                        if (autoTileResult) {
+                            autoTileData.set(`${x},${y}`, autoTileResult);
+                        }
+                        
                         if (debugMode) {
+                            const pattern = calculateLandPattern(x, y);
                             debugSteps.push({
                                 x: x,
                                 y: y,
                                 type: 'coast_detected',
-                                message: `Water tile (${x},${y}) identified as coastline - adjacent to land (${mapData[y][x]})`
+                                message: `Water tile (${x},${y}) - Pattern: ${pattern.toString(2).padStart(8, '0')} (${autoTileResult ? autoTileResult.patternName : 'No match'})`
                             });
                         }
                     }
@@ -707,22 +780,184 @@
             updateDebugControls();
             renderMap();
             updateStats();
-            log(`Coastline detection complete: ${coastCount} coast tiles identified`);
+            log(`Coastline detection complete: ${coastCount} coast tiles identified with auto-tile patterns`);
             
             if (debugMode) {
                 log(`Debug mode: ${debugSteps.length} steps recorded. Use step controls to navigate.`);
             }
         }
         
-        // Clear coastline data
+        // Check if a water tile has any adjacent land (from coastlineAutoTiler.ts)
+        function isAdjacentToLand(x, y) {
+            const directions = [
+                [-1, -1], [0, -1], [1, -1],  // NW, N, NE
+                [-1,  0],          [1,  0],  // W,     E  
+                [-1,  1], [0,  1], [1,  1]   // SW, S, SE
+            ];
+            
+            for (const [dx, dy] of directions) {
+                const neighborType = getTileType(x + dx, y + dy);
+                
+                // If neighbor exists and is not water, this water tile is adjacent to land
+                if (neighborType && neighborType !== 'water') {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        // Calculate 8-neighbor land pattern for a water tile (from coastlineAutoTiler.ts)
+        function calculateLandPattern(x, y) {
+            let pattern = 0;
+            
+            // 8-direction check: for water tile, we check where LAND is
+            const directions = [
+                { dx: 0, dy: -1, bit: 0 },  // North
+                { dx: 1, dy: -1, bit: 1 },  // NorthEast
+                { dx: 1, dy: 0, bit: 2 },   // East
+                { dx: 1, dy: 1, bit: 3 },   // SouthEast
+                { dx: 0, dy: 1, bit: 4 },   // South
+                { dx: -1, dy: 1, bit: 5 },  // SouthWest
+                { dx: -1, dy: 0, bit: 6 },  // West
+                { dx: -1, dy: -1, bit: 7 }  // NorthWest
+            ];
+            
+            for (const dir of directions) {
+                const neighborType = getTileType(x + dir.dx, y + dir.dy);
+                
+                // If neighbor is land (not water or null), set the bit
+                if (neighborType && neighborType !== 'water') {
+                    pattern |= (1 << dir.bit);
+                }
+            }
+            
+            return pattern;
+        }
+        
+        // Get tile type at position (bounds-safe)
+        function getTileType(x, y) {
+            if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) {
+                return null;
+            }
+            return mapData[y] ? mapData[y][x] : null;
+        }
+        
+        // Calculate coastline auto-tile for a water tile (from coastlineAutoTiler.ts)
+        function calculateCoastlineTile(x, y) {
+            const currentTile = getTileType(x, y);
+            
+            // Only process water tiles
+            if (currentTile !== 'water') {
+                return null;
+            }
+            
+            // Check if this water tile is adjacent to land
+            if (!isAdjacentToLand(x, y)) {
+                // This is deep water - return the base water pattern
+                return {
+                    tileIndex: 0,
+                    patternName: "Deep Water",
+                    pattern: 0b00000000
+                };
+            }
+            
+            // This is a coastline tile - calculate its pattern
+            const pattern = calculateLandPattern(x, y);
+            const tileId = findBestTileMatch(pattern);
+            const patternData = COASTLINE_PATTERNS.find(p => p.id === tileId);
+            
+            return {
+                tileIndex: tileId,
+                patternName: patternData?.name || "Unknown",
+                pattern: pattern
+            };
+        }
+        
+        // Find the best tile match for a given pattern (from coastlineAutoTiler.ts)
+        function findBestTileMatch(pattern) {
+            // First try exact match
+            if (patternLookup.has(pattern)) {
+                return patternLookup.get(pattern);
+            }
+            
+            // If no exact match, find the closest match based on bit similarity
+            let bestMatch = 0;
+            let bestScore = -1;
+            
+            for (const patternDef of COASTLINE_PATTERNS) {
+                const score = calculatePatternSimilarity(pattern, patternDef.pattern);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = patternDef.id;
+                }
+            }
+            
+            return bestMatch;
+        }
+        
+        // Calculate pattern similarity (higher is better)
+        function calculatePatternSimilarity(pattern1, pattern2) {
+            const xor = pattern1 ^ pattern2;
+            // Count matching bits (8 - number of different bits)
+            let differentBits = 0;
+            for (let i = 0; i < 8; i++) {
+                if (xor & (1 << i)) {
+                    differentBits++;
+                }
+            }
+            return 8 - differentBits;
+        }
+        
+        // Apply auto-tiling to generate tile sprites
+        function applyAutoTiling() {
+            if (coastlineData.size === 0) {
+                log('Detect coastline first!');
+                return;
+            }
+            
+            log('🎯 Applying auto-tiling to coastline tiles...');
+            
+            let tilesGenerated = 0;
+            const patternCounts = {};
+            
+            for (const coastTileKey of coastlineData) {
+                const [x, y] = coastTileKey.split(',').map(Number);
+                const autoTileInfo = autoTileData.get(coastTileKey);
+                
+                if (autoTileInfo) {
+                    // Count pattern usage
+                    const patternName = autoTileInfo.patternName;
+                    patternCounts[patternName] = (patternCounts[patternName] || 0) + 1;
+                    tilesGenerated++;
+                }
+            }
+            
+            log(`Auto-tiling complete: ${tilesGenerated} coastline tiles processed`);
+            log('Pattern usage:');
+            
+            // Sort patterns by usage count
+            const sortedPatterns = Object.entries(patternCounts)
+                .sort(([,a], [,b]) => b - a)
+                .slice(0, 10); // Show top 10
+            
+            for (const [pattern, count] of sortedPatterns) {
+                log(`  ${pattern}: ${count} tiles`);
+            }
+            
+            renderMap();
+        }
+        
+        // Clear coastline and auto-tile data
         function clearCoastline() {
             coastlineData.clear();
+            autoTileData.clear();
             debugSteps = [];
             currentStep = 0;
             updateDebugControls();
             renderMap();
             updateStats();
-            log('Coastline data cleared');
+            log('Coastline and auto-tile data cleared');
         }
         
         // Count tiles of a specific type
@@ -754,7 +989,7 @@
             document.getElementById('totalTiles').textContent = totalCount;
         }
         
-        // Render the map - KBTS compatible
+        // Render the map - KBTS compatible with auto-tile visualization
         function renderMap() {
             const showWater = document.getElementById('showOceanTiles').checked;
             const showCoast = document.getElementById('showCoastTiles').checked;
@@ -786,6 +1021,36 @@
                     
                     mapCtx.fillStyle = color;
                     mapCtx.fillRect(pixelX, pixelY, tileSize, tileSize);
+                    
+                    // Draw auto-tile info for coast tiles
+                    const autoTileInfo = autoTileData.get(`${x},${y}`);
+                    if (autoTileInfo && showCoast) {
+                        // Draw tile ID in corner
+                        mapCtx.fillStyle = 'white';
+                        mapCtx.font = '8px monospace';
+                        mapCtx.fillText(autoTileInfo.tileIndex.toString(), pixelX + 1, pixelY + 8);
+                        
+                        // Draw pattern bits as small dots
+                        const pattern = autoTileInfo.pattern;
+                        const dotSize = 1;
+                        const positions = [
+                            [pixelX + 4, pixelY + 2],   // N
+                            [pixelX + 6, pixelY + 2],   // NE
+                            [pixelX + 6, pixelY + 4],   // E
+                            [pixelX + 6, pixelY + 6],   // SE
+                            [pixelX + 4, pixelY + 6],   // S
+                            [pixelX + 2, pixelY + 6],   // SW
+                            [pixelX + 2, pixelY + 4],   // W
+                            [pixelX + 2, pixelY + 2]    // NW
+                        ];
+                        
+                        for (let bit = 0; bit < 8; bit++) {
+                            if (pattern & (1 << bit)) {
+                                mapCtx.fillStyle = 'yellow';
+                                mapCtx.fillRect(positions[bit][0], positions[bit][1], dotSize, dotSize);
+                            }
+                        }
+                    }
                     
                     // Highlight selected tile
                     if (selectedTile && selectedTile.x === x && selectedTile.y === y) {
@@ -840,18 +1105,28 @@
             }
         }
         
-                // Load a tile into the editor - KBTS compatible
+                // Load a tile into the editor - KBTS compatible with auto-tile info
         function loadTileIntoEditor(x, y) {
             if (!mapData[y] || !mapData[y][x]) return;
             
             const tileType = mapData[y][x];
             const isCoast = coastlineData.has(`${x},${y}`);
+            const autoTileInfo = autoTileData.get(`${x},${y}`);
             
-            document.getElementById('tileInfo').innerHTML = `
+            let infoHtml = `
                 <strong>Tile (${x}, ${y})</strong><br>
                 Type: ${tileType}<br>
                 Coast: ${isCoast ? 'Yes' : 'No'}
             `;
+            
+            if (autoTileInfo) {
+                infoHtml += `<br><strong>Auto-Tile:</strong><br>
+                Pattern: ${autoTileInfo.pattern.toString(2).padStart(8, '0')}<br>
+                Tile ID: ${autoTileInfo.tileIndex}<br>
+                Name: ${autoTileInfo.patternName}`;
+            }
+            
+            document.getElementById('tileInfo').innerHTML = infoHtml;
             
             // Initialize editor with current tile - larger 20x20 pixel grid for better editing
             const editorSize = 320;
