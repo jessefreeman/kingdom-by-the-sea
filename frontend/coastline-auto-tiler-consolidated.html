@@ -209,20 +209,16 @@
             transform: scale(1.1);
         }
         
-        .color-option.grass {
-            background: #2e7d32;
+        .color-option.land {
+            background: #90EE90;
         }
         
         .color-option.water {
-            background: #0c3b66;
+            background: #4169E1;
         }
         
-        .color-option.forest {
-            background: #1f5f24;
-        }
-        
-        .color-option.hill {
-            background: #7c6f4a;
+        .color-option.coast {
+            background: #87CEEB;
         }
         
         canvas {
@@ -308,12 +304,13 @@
             <h2>🎮 Map Generation & Controls</h2>
             <div class="controls">
                 <div class="control-group">
-                    <label for="mapSize">Map Size:</label>
-                    <select id="mapSize">
-                        <option value="small">Small (8×6)</option>
-                        <option value="medium" selected>Medium (10×8)</option>
-                        <option value="large">Large (12×8)</option>
-                    </select>
+                    <label for="mapWidth">Width:</label>
+                    <input type="number" id="mapWidth" value="32" min="16" max="64">
+                </div>
+                
+                <div class="control-group">
+                    <label for="mapHeight">Height:</label>
+                    <input type="number" id="mapHeight" value="24" min="12" max="48">
                 </div>
                 
                 <div class="control-group">
@@ -325,8 +322,8 @@
                     <label for="tileSize">Tile Size:</label>
                     <select id="tileSize">
                         <option value="16">16px</option>
-                        <option value="20">20px</option>
-                        <option value="24" selected>24px</option>
+                        <option value="20" selected>20px</option>
+                        <option value="24">24px</option>
                         <option value="32">32px</option>
                     </select>
                 </div>
@@ -340,7 +337,7 @@
                 <div class="toggle-group">
                     <div class="checkbox-wrapper">
                         <input type="checkbox" id="showOceanTiles" checked>
-                        <label for="showOceanTiles">Show Water Tiles</label>
+                        <label for="showOceanTiles">Show Ocean Tiles</label>
                     </div>
                     
                     <div class="checkbox-wrapper">
@@ -394,10 +391,9 @@
                     
                     <div class="editor-controls">
                         <div class="color-selector">
-                            <div class="color-option grass selected" data-type="grass" title="Grass"></div>
+                            <div class="color-option land selected" data-type="land" title="Land"></div>
                             <div class="color-option water" data-type="water" title="Water"></div>
-                            <div class="color-option forest" data-type="forest" title="Forest"></div>
-                            <div class="color-option hill" data-type="hill" title="Hill"></div>
+                            <div class="color-option coast" data-type="coast" title="Coast"></div>
                         </div>
                     </div>
                     
@@ -418,14 +414,14 @@
     </div>
 
     <script>
-        // Core data structures - matching KBTS game specs
+        // Core data structures
         let mapData = [];
         let coastlineData = new Set();
-        let mapWidth = 10;    // Default medium size
-        let mapHeight = 8;    // Default medium size  
-        let tileSize = 24;    // CSS --tile variable default
+        let mapWidth = 32;
+        let mapHeight = 24;
+        let tileSize = 20;
         let selectedTile = null;
-        let currentEditType = 'grass'; // Match game tile types
+        let currentEditType = 'land';
         
         // Debug system
         let debugMode = false;
@@ -438,41 +434,29 @@
         const editorCanvas = document.getElementById('editorCanvas');
         const editorCtx = editorCanvas.getContext('2d');
         
-        // Colors - matching KBTS game colors
+        // Colors
         const COLORS = {
-            water: '#0c3b66',     // Deep blue like KBTS
-            coast: '#155d96',     // Coastal blue like KBTS  
-            grass: '#2e7d32',     // Green like KBTS
-            forest: '#1f5f24',    // Dark green like KBTS
-            hill: '#7c6f4a',      // Brown like KBTS
-            mountain: '#5f5750',  // Gray like KBTS
+            land: '#90EE90',      // Light green
+            water: '#4169E1',     // Royal blue
+            coast: '#87CEEB',     // Sky blue
+            deepWater: '#191970', // Midnight blue
             selected: '#ff6b6b',  // Red highlight
             grid: '#cccccc'       // Light gray
-        };
-        
-        // KBTS game map sizes
-        const MAP_SIZES = {
-            small: { w: 8, h: 6 },
-            medium: { w: 10, h: 8 },
-            large: { w: 12, h: 8 }
         };
         
         // Tile editor state
         let editorTileData = [];
         let isEditing = false;
         
-        // KBTS-compatible PRNG (xorshift32)
-        class KBTSRng {
+        // Simple PRNG for consistent generation
+        class SimpleRNG {
             constructor(seed) {
-                this.seed = seed >>> 0; // Ensure 32-bit unsigned
+                this.seed = seed;
             }
             
             next() {
-                this.seed ^= this.seed << 13;
-                this.seed ^= this.seed >>> 17;
-                this.seed ^= this.seed << 5;
-                this.seed = this.seed >>> 0;
-                return this.seed / 4294967296; // Convert to [0, 1)
+                this.seed = (this.seed * 1103515245 + 12345) & 0x7fffffff;
+                return this.seed / 0x7fffffff;
             }
         }
         
@@ -483,12 +467,10 @@
             log('Coastline Auto-Tiler initialized. Generate an island to begin!');
         }
         
-        // Update map dimensions based on KBTS game sizes
+        // Update map dimensions
         function updateMapSize() {
-            const size = document.getElementById('mapSize').value;
-            const mapSize = MAP_SIZES[size];
-            mapWidth = mapSize.w;
-            mapHeight = mapSize.h;
+            mapWidth = parseInt(document.getElementById('mapWidth').value);
+            mapHeight = parseInt(document.getElementById('mapHeight').value);
             tileSize = parseInt(document.getElementById('tileSize').value);
             
             mapCanvas.width = mapWidth * tileSize;
@@ -506,7 +488,8 @@
         // Setup event listeners
         function setupEventListeners() {
             // Map size controls
-            document.getElementById('mapSize').addEventListener('change', updateMapSize);
+            document.getElementById('mapWidth').addEventListener('change', updateMapSize);
+            document.getElementById('mapHeight').addEventListener('change', updateMapSize);
             document.getElementById('tileSize').addEventListener('change', updateMapSize);
             
             // Canvas click handling
@@ -533,14 +516,14 @@
             editorCanvas.addEventListener('mouseleave', stopEditing);
         }
         
-        // Generate island using KBTS algorithm
+        // Generate a random island
         function generateIsland() {
             const seed = parseInt(document.getElementById('islandSeed').value) || Date.now();
-            const rng = new KBTSRng(seed);
+            const rng = new SimpleRNG(seed);
             
-            log(`Generating KBTS-style island with seed: ${seed}, size: ${mapWidth}x${mapHeight}`);
+            log(`Generating island with seed: ${seed}, size: ${mapWidth}x${mapHeight}`);
             
-            // Initialize map with water (KBTS style)
+            // Initialize map with water
             mapData = [];
             for (let y = 0; y < mapHeight; y++) {
                 mapData[y] = [];
@@ -549,84 +532,33 @@
                 }
             }
             
-            // KBTS island generation algorithm
-            const cx = (mapWidth - 1) / 2;
-            const cy = (mapHeight - 1) / 2;
-            const maxR = Math.hypot(cx, cy);
+            // Generate island using improved noise
+            const centerX = mapWidth / 2;
+            const centerY = mapHeight / 2;
+            const maxRadius = Math.min(mapWidth, mapHeight) * 0.35;
             
-            // Base island shape with noise (matches KBTS generate function)
             for (let y = 0; y < mapHeight; y++) {
                 for (let x = 0; x < mapWidth; x++) {
-                    const v = 0.6 - Math.hypot(x - cx, y - cy) / maxR + (rng.next() * 0.35 - 0.15);
-                    mapData[y][x] = v > 0 ? 'grass' : 'water';
-                }
-            }
-            
-            // Create coastal border - ensure no land touches edges (KBTS style)
-            for (let x = 0; x < mapWidth; x++) {
-                for (let y = 0; y < mapHeight; y++) {
-                    const isEdge = x === 0 || x === mapWidth - 1 || y === 0 || y === mapHeight - 1;
-                    const isNearEdge = x <= 1 || x >= mapWidth - 2 || y <= 1 || y >= mapHeight - 2;
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    if (isEdge) {
-                        mapData[y][x] = 'water';
-                    } else if (isNearEdge && mapData[y][x] !== 'water') {
-                        if (rng.next() < 0.7) {
-                            mapData[y][x] = 'water';
-                        }
-                    }
-                }
-            }
-            
-            // Add terrain variety (simplified KBTS resource generation)
-            const resourcePoints = [];
-            const n = Math.max(4, Math.floor((mapWidth * mapHeight) / 12));
-            
-            for (let i = 0; i < n; i++) {
-                const x = 2 + Math.floor(rng.next() * (mapWidth - 4));
-                const y = 2 + Math.floor(rng.next() * (mapHeight - 4));
-                if (mapData[y][x] !== 'water') {
-                    resourcePoints.push({ x, y });
-                }
-            }
-            
-            // Apply terrain based on resource point proximity (KBTS style)
-            for (let y = 0; y < mapHeight; y++) {
-                for (let x = 0; x < mapWidth; x++) {
-                    if (mapData[y][x] === 'water') continue;
+                    // Base island shape
+                    let landProbability = Math.max(0, 1 - (distance / maxRadius));
                     
-                    let nearbyResources = 0;
-                    for (const point of resourcePoints) {
-                        if (Math.hypot(point.x - x, point.y - y) <= 2.1) {
-                            nearbyResources++;
-                        }
-                    }
+                    // Add noise for natural coastline
+                    const noise1 = Math.sin(x * 0.3) * Math.cos(y * 0.3) * 0.3;
+                    const noise2 = Math.sin(x * 0.15) * Math.cos(y * 0.15) * 0.2;
+                    const noise3 = (rng.next() - 0.5) * 0.4;
                     
-                    // KBTS terrain assignment logic
-                    if (nearbyResources >= 4) {
-                        mapData[y][x] = 'mountain';
-                    } else if (nearbyResources === 3) {
-                        mapData[y][x] = 'hill';
-                    } else if (nearbyResources === 2) {
-                        mapData[y][x] = 'forest';
-                    } else {
-                        mapData[y][x] = 'grass';
-                    }
-                }
-            }
-            
-            // Create some lakes (KBTS style)
-            for (const point of resourcePoints) {
-                if (rng.next() < 0.25) {
-                    mapData[point.y][point.x] = 'water';
-                    // Spread water to neighbors
-                    const dirs = [[1,0], [-1,0], [0,1], [0,-1]];
-                    for (const [dx, dy] of dirs) {
-                        const nx = point.x + dx;
-                        const ny = point.y + dy;
-                        if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight && rng.next() < 0.5) {
-                            mapData[ny][nx] = 'water';
-                        }
+                    landProbability += noise1 + noise2 + noise3;
+                    
+                    // Create peninsulas and bays
+                    const angleNoise = Math.sin((Math.atan2(dy, dx) + Math.PI) * 3) * 0.2;
+                    landProbability += angleNoise;
+                    
+                    if (landProbability > 0.5) {
+                        mapData[y][x] = 'land';
                     }
                 }
             }
@@ -638,10 +570,10 @@
             
             renderMap();
             updateStats();
-            log(`KBTS island generated: ${countTiles('grass')} grass, ${countTiles('water')} water, ${countTiles('forest')} forest, ${countTiles('hill')} hill, ${countTiles('mountain')} mountain tiles`);
+            log(`Island generated: ${countTiles('land')} land tiles, ${countTiles('water')} water tiles`);
         }
         
-        // Detect coastline tiles (water tiles that touch land in 8 directions) - KBTS compatible
+        // Detect coastline tiles (water tiles that touch land in 8 directions)
         function detectCoastline() {
             if (mapData.length === 0) {
                 log('Generate an island first!');
@@ -652,7 +584,7 @@
             debugSteps = [];
             currentStep = 0;
             
-            log('🌊 Starting KBTS coastline detection...');
+            log('🌊 Starting coastline detection...');
             
             if (debugMode) {
                 log('Debug mode: analyzing each tile step by step');
@@ -665,7 +597,7 @@
                     // Only check water tiles
                     if (mapData[y][x] !== 'water') continue;
                     
-                    // Check 8 neighboring tiles for non-water (land) tiles
+                    // Check 8 neighboring tiles
                     let hasLandNeighbor = false;
                     
                     for (let dy = -1; dy <= 1; dy++) {
@@ -677,9 +609,7 @@
                             
                             // Check bounds
                             if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
-                                const neighborType = mapData[ny][nx];
-                                // Any non-water tile counts as land
-                                if (neighborType !== 'water') {
+                                if (mapData[ny][nx] === 'land') {
                                     hasLandNeighbor = true;
                                     break;
                                 }
@@ -697,7 +627,7 @@
                                 x: x,
                                 y: y,
                                 type: 'coast_detected',
-                                message: `Water tile (${x},${y}) identified as coastline - adjacent to land (${mapData[y][x]})`
+                                message: `Tile (${x},${y}) identified as coastline - water tile adjacent to land`
                             });
                         }
                     }
@@ -738,25 +668,22 @@
             return count;
         }
         
-        // Update statistics display - KBTS compatible
+        // Update statistics display
         function updateStats() {
-            const grassCount = countTiles('grass');
+            const landCount = countTiles('land');
             const waterCount = countTiles('water');
-            const forestCount = countTiles('forest');
-            const hillCount = countTiles('hill');
-            const mountainCount = countTiles('mountain');
             const coastCount = coastlineData.size;
             const totalCount = mapWidth * mapHeight;
             
-            document.getElementById('landTiles').textContent = grassCount + forestCount + hillCount + mountainCount;
+            document.getElementById('landTiles').textContent = landCount;
             document.getElementById('waterTiles').textContent = waterCount;
             document.getElementById('coastTiles').textContent = coastCount;
             document.getElementById('totalTiles').textContent = totalCount;
         }
         
-        // Render the map - KBTS compatible
+        // Render the map
         function renderMap() {
-            const showWater = document.getElementById('showOceanTiles').checked;
+            const showOcean = document.getElementById('showOceanTiles').checked;
             const showCoast = document.getElementById('showCoastTiles').checked;
             const showGrid = document.getElementById('showGrid').checked;
             
@@ -768,19 +695,20 @@
                     const pixelX = x * tileSize;
                     const pixelY = y * tileSize;
                     
-                    if (!mapData[y] || !mapData[y][x]) continue;
+                    let color = COLORS.water;
                     
-                    const tileType = mapData[y][x];
-                    let color = COLORS[tileType] || COLORS.water;
-                    
-                    // Handle coastline display
-                    if (tileType === 'water') {
-                        const isCoast = coastlineData.has(`${x},${y}`);
-                        
-                        if (isCoast && showCoast) {
-                            color = COLORS.coast;
-                        } else if (!showWater) {
-                            continue; // Skip drawing water tiles
+                    if (mapData[y] && mapData[y][x]) {
+                        if (mapData[y][x] === 'land') {
+                            color = COLORS.land;
+                        } else if (mapData[y][x] === 'water') {
+                            // Check if this is a coast tile
+                            const isCoast = coastlineData.has(`${x},${y}`);
+                            
+                            if (isCoast && showCoast) {
+                                color = COLORS.coast;
+                            } else if (!showOcean) {
+                                continue; // Skip drawing ocean tiles
+                            }
                         }
                     }
                     
@@ -840,7 +768,7 @@
             }
         }
         
-        // Load a tile into the editor - KBTS compatible
+        // Load a tile into the editor
         function loadTileIntoEditor(x, y) {
             if (!mapData[y] || !mapData[y][x]) return;
             
@@ -945,26 +873,18 @@
                 return;
             }
             
-            // Determine the primary type from the editor
-            let typeCounts = {};
+            // For now, just determine the primary type
+            let landCount = 0;
+            let waterCount = 0;
             
             for (let py = 0; py < 10; py++) {
                 for (let px = 0; px < 10; px++) {
-                    const type = editorTileData[py][px];
-                    typeCounts[type] = (typeCounts[type] || 0) + 1;
+                    if (editorTileData[py][px] === 'land') landCount++;
+                    else if (editorTileData[py][px] === 'water') waterCount++;
                 }
             }
             
-            // Find the most common type
-            let newType = 'water';
-            let maxCount = 0;
-            for (const [type, count] of Object.entries(typeCounts)) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    newType = type;
-                }
-            }
-            
+            const newType = landCount > waterCount ? 'land' : 'water';
             mapData[selectedTile.y][selectedTile.x] = newType;
             
             // Update coastline if needed

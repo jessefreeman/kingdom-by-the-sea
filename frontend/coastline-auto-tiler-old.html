@@ -341,6 +341,7 @@
             
             <div class="controls">
                 <button onclick="regenerateIsland()">🏝️ Generate New Island</button>
+                <button onclick="toggleCoastlineDisplay()" id="toggleBtn">👁️ Hide Coastline Tiles</button>
                 <button onclick="applyCurrentAlgorithm()">🔄 Apply Algorithm</button>
                 <button onclick="analyzeResults()">🔍 Analyze Results</button>
                 
@@ -357,6 +358,9 @@
                     <label>Seed</label>
                     <input type="number" id="seedInput" value="12345" min="1" max="999999">
                 </div>
+                
+                <button onclick="stepThroughAlgorithm()" id="stepBtn">🔍 Step Through Algorithm</button>
+                <button onclick="resetDebugger()" id="resetDebugBtn">↺ Reset Debug</button>
             </div>
             
             <div class="display-area">
@@ -384,6 +388,18 @@
                     </div>
                 </div>
                 
+                <!-- Debug Information Panel (placed below map for visibility) -->
+                <div id="debugPanel" style="display: none; margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 10px; border: 2px solid #17a2b8; grid-column: 1 / -1;">
+                    <h3 style="color: #17a2b8; margin-top: 0;">🔍 Step-by-Step Debug Information</h3>
+                    <div id="debugInfo" style="font-family: monospace; font-size: 0.9em; white-space: pre-wrap; max-height: 250px; overflow-y: auto; background: white; padding: 15px; border-radius: 5px; border: 1px solid #ccc;"></div>
+                    <div style="margin-top: 15px; display: flex; gap: 10px; align-items: center;">
+                        <button onclick="prevDebugStep()" id="prevStepBtn">← Previous Step</button>
+                        <button onclick="nextDebugStep()" id="nextStepBtn">Next Step →</button>
+                        <span id="stepCounter" style="margin-left: 15px; font-weight: bold;">Step 0 of 0</span>
+                        <button onclick="resetDebugger()" style="margin-left: auto;">Close Debug</button>
+                    </div>
+                </div>
+                
                 <div class="editor-section">
                     <h3>🛠️ Tile Editor</h3>
                     <p class="description">Click tiles in the map to edit them</p>
@@ -395,6 +411,7 @@
                         <div class="editor-controls" style="margin-top: 15px;">
                             <button onclick="clearTile()">Clear</button>
                             <button onclick="resetTileToDefault()">Reset</button>
+                            <button onclick="forceResetToTheory()">Reset to Theory</button>
                             <button onclick="saveTileChanges()">Save</button>
                         </div>
                         <div class="editor-instructions" style="margin-top: 10px; font-size: 0.9em; color: #666;">
@@ -411,6 +428,14 @@
                             <p>Select a tile to see pattern details</p>
                         </div>
                     </div>
+                    
+                    <div class="pattern-selector" style="margin-top: 20px;">
+                        <h4>Available Patterns</h4>
+                        <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">Click to edit directly:</p>
+                        <div class="pattern-grid" id="tileSelector" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; max-width: 200px;">
+                            <!-- Patterns will be populated here -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -421,48 +446,7 @@
                 <p>Apply the algorithm to see the tile configurations used...</p>
             </div>
         </div>
-
-        <div class="section">
-            <h2>🛠️ Tile Editor & Preview</h2>
-            <p class="description">
-                Edit individual tile configurations and see how they look. Changes are saved automatically to localStorage.
-                This allows you to fine-tune the coastline tiles for your specific art style.
-            </p>
-            
-            <div style="display: grid; grid-template-columns: 1fr 300px; gap: 30px;">
-                <div>
-                    <h3>Tile Selector</h3>
-                    <div class="pattern-grid" id="tileSelector">
-                        <!-- Will be populated by JavaScript -->
-                    </div>
-                    
-                    <h3 id="selectedTileTitle">Select a tile to edit</h3>
-                    <div class="tile-editor" style="margin-top: 20px;">
-                        <canvas id="editorCanvas" width="160" height="160" 
-                                style="border: 2px solid #ccc; image-rendering: pixelated; cursor: crosshair;"></canvas>
-                        <div class="editor-controls" style="margin-top: 15px;">
-                            <button onclick="clearTile()">Clear Tile</button>
-                            <button onclick="resetTileToDefault()">Reset to Default</button>
-                            <button onclick="saveTileChanges()">Save Changes</button>
-                        </div>
-                        <div class="editor-instructions" style="margin-top: 10px; font-size: 0.9em; color: #666;">
-                            <p>• Left click: Draw white pixels</p>
-                            <p>• Right click: Erase pixels</p>
-                            <p>• Changes save automatically</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="tile-preview">
-                    <h4>Live Preview</h4>
-                    <canvas id="previewCanvas" width="80" height="80" style="border: 1px solid #ccc; image-rendering: pixelated;"></canvas>
-                    <h4 style="margin-top: 20px;">Pattern Info</h4>
-                    <div id="patternInfo">
-                        <p>Select a tile to see pattern details</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        
     </div>
 
     <script>
@@ -474,6 +458,8 @@
         let currentMap = null;
         let coastlineData = {};
         let mapSize = { w: 24, h: 18 };
+        let currentTileSize = 20; // Track current tile size for click handling
+        let showCoastlineTiles = true; // Toggle for showing/hiding coastline tiles
         
         // Load configuration on startup
         async function loadMarchingSquaresConfig() {
@@ -621,42 +607,163 @@
         }
         
         // Apply Marching Squares algorithm
-        function applyMarchingSquares() {
+        function applyMarchingSquares(debugMode = false) {
             coastlineData = {};
             let tileCount = 0;
             
+            if (debugMode) {
+                addDebugStep('🔄 Starting Marching Squares Algorithm\n' +
+                    `Map Size: ${mapSize.w} x ${mapSize.h}\n` +
+                    'Clearing previous coastline data...');
+            }
+            
             console.log('🌊 Applying Marching Squares coastline generation...');
             
-            // Process each 2x2 cell in the map
-            for (let y = 0; y < mapSize.h - 1; y++) {
-                for (let x = 0; x < mapSize.w - 1; x++) {
-                    // Sample 2x2 corners: NW, NE, SE, SW
-                    const corners = [
-                        currentMap[y][x],         // NW
-                        currentMap[y][x + 1],     // NE
-                        currentMap[y + 1][x + 1], // SE
-                        currentMap[y + 1][x]      // SW
-                    ];
+            // Debug: Count land vs water tiles first
+            let landCount = 0, waterCount = 0;
+            for (let y = 0; y < mapSize.h; y++) {
+                for (let x = 0; x < mapSize.w; x++) {
+                    if (currentMap[y][x]) landCount++;
+                    else waterCount++;
+                }
+            }
+            console.log(`Map composition: ${landCount} land tiles, ${waterCount} water tiles`);
+            
+            if (debugMode) {
+                addDebugStep(`📊 Map Analysis Complete\n` +
+                    `Land tiles: ${landCount}\n` +
+                    `Water tiles: ${waterCount}\n` +
+                    `Total tiles: ${landCount + waterCount}\n\n` +
+                    'Now processing water tiles adjacent to land...');
+            }
+            
+            // New approach: Find land tiles and check adjacent water tiles for coastline patterns
+            for (let y = 0; y < mapSize.h; y++) {
+                for (let x = 0; x < mapSize.w; x++) {
+                    if (debugMode && y === 0 && x < 5) {
+                        addDebugStep(`🔍 Processing tile (${x}, ${y})\n` +
+                            `Tile type: ${currentMap[y][x] ? 'LAND' : 'WATER'}\n` +
+                            'Checking if this is a land tile...', x, y);
+                    }
                     
-                    // Convert to 4-bit pattern
-                    const pattern = corners.reduce((acc, corner, i) => 
-                        acc | (corner ? (1 << (3 - i)) : 0), 0);
+                    // Only process LAND tiles - we'll check water around them
+                    if (!currentMap[y][x]) {
+                        if (debugMode && y === 0 && x < 5) {
+                            addDebugStep(`💧 Skipping water tile at (${x}, ${y})\n` +
+                                'We only process land tiles in this approach', x, y, 'blue');
+                        }
+                        continue; // Skip water tiles - we start from land
+                    }
                     
-                    // Find configuration
-                    const config = window.patternLookup.get(pattern);
+                    if (debugMode && y < 3 && x < 5) {
+                        addDebugStep(`🏞️ Found land tile at (${x}, ${y})\n` +
+                            'Checking all 8 adjacent water tiles for coastline patterns...', x, y, 'green');
+                    }
                     
-                    if (config && config.needsTile) {
-                        const key = `${x},${y}`;
-                        coastlineData[key] = {
-                            config: config,
-                            pattern: pattern,
-                            corners: corners,
-                            x: x,
-                            y: y
-                        };
-                        tileCount++;
+                    // Check all 8 adjacent positions for water tiles that need coastline patterns
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue; // Skip the land tile itself
+                            
+                            const waterX = x + dx;
+                            const waterY = y + dy;
+                            
+                            // Check bounds
+                            if (waterX < 0 || waterX >= mapSize.w || waterY < 0 || waterY >= mapSize.h) {
+                                continue;
+                            }
+                            
+                            // Skip if this adjacent tile is also land
+                            if (currentMap[waterY][waterX]) {
+                                continue;
+                            }
+                            
+                            // Skip if we already processed this water tile
+                            const key = `${waterX},${waterY}`;
+                            if (coastlineData[key]) {
+                                continue;
+                            }
+                            
+                            if (debugMode && y < 2 && x < 3) {
+                                addDebugStep(`🌊 Checking water tile at (${waterX}, ${waterY})\n` +
+                                    `Adjacent to land tile (${x}, ${y})\n` +
+                                    'Calculating Marching Squares pattern...', waterX, waterY, 'cyan');
+                            }
+                    
+                            // Now check what marching squares pattern this water tile should have
+                            // Sample the 2x2 area with this water tile as the NW corner
+                            const corners = [
+                                (waterY >= 0 && waterX >= 0 && waterY < mapSize.h && waterX < mapSize.w) ? currentMap[waterY][waterX] : false,         // NW (this water tile)
+                                (waterY >= 0 && waterX + 1 >= 0 && waterY < mapSize.h && waterX + 1 < mapSize.w) ? currentMap[waterY][waterX + 1] : false, // NE
+                                (waterY + 1 >= 0 && waterX + 1 >= 0 && waterY + 1 < mapSize.h && waterX + 1 < mapSize.w) ? currentMap[waterY + 1][waterX + 1] : false, // SE
+                                (waterY + 1 >= 0 && waterX >= 0 && waterY + 1 < mapSize.h && waterX < mapSize.w) ? currentMap[waterY + 1][waterX] : false  // SW
+                            ];
+                            
+                            // Count land and water in this 2x2 cell
+                            const landCorners = corners.filter(c => c).length;
+                            
+                            // ONLY process if there's BOTH land AND water in this cell
+                            if (landCorners === 0 || landCorners === 4) {
+                                if (debugMode && y < 2 && x < 2) {
+                                    addDebugStep(`❌ Rejecting water tile at (${waterX}, ${waterY})\n` +
+                                        `2x2 pattern has ${landCorners} land corners\n` +
+                                        `Pattern: [${corners.map(c => c ? 'L' : 'W').join(', ')}]\n` +
+                                        `Need both land AND water in 2x2 cell!`, waterX, waterY, 'orange');
+                                }
+                                continue; // Skip pure land or pure water cells
+                            }
+                            
+                            // Convert to 4-bit pattern
+                            const pattern = corners.reduce((acc, corner, i) => 
+                                acc | (corner ? (1 << (3 - i)) : 0), 0);
+                            
+                            // Find configuration
+                            const config = window.patternLookup.get(pattern);
+                            
+                            if (debugMode && y < 2 && x < 2) {
+                                addDebugStep(`✅ Valid coastline tile at (${waterX}, ${waterY})\n` +
+                                    `2x2 corners: [${corners.map(c => c ? 'L' : 'W').join(', ')}]\n` +
+                                    `Pattern: ${pattern} (${config ? config.name : 'Unknown'})\n` +
+                                    `Land corners: ${landCorners}/4\n` +
+                                    `${config && config.needsTile ? 'WILL PLACE TILE' : 'NO TILE NEEDED'}`, waterX, waterY, 'lime');
+                            }
+                            
+                            // Debug problematic areas
+                            if (waterY >= mapSize.h - 5) {
+                                console.log(`Bottom area WATER tile at (${waterX},${waterY}): pattern ${pattern}, land corners: ${landCorners}, corners:`, corners);
+                            }
+                            
+                            if (config && config.needsTile) {
+                                coastlineData[key] = {
+                                    config: config,
+                                    pattern: pattern,
+                                    corners: corners,
+                                    x: waterX,  // Water tile position
+                                    y: waterY,
+                                    renderX: waterX,  // Render the coastline tile at the water tile position
+                                    renderY: waterY
+                                };
+                                tileCount++;
+                                
+                                if (debugMode && tileCount <= 10) {
+                                    addDebugStep(`🎯 COASTLINE TILE CREATED #${tileCount}\n` +
+                                        `Position: (${waterX}, ${waterY}) - WATER tile\n` +
+                                        `Pattern: ${pattern} - ${config.name}\n` +
+                                        `Corners: [${corners.map(c => c ? 'Land' : 'Water').join(', ')}]\n` +
+                                        `Found from land tile at (${x}, ${y})`, waterX, waterY, 'yellow');
+                                }
+                            }
+                        }
                     }
                 }
+            }
+            
+            if (debugMode) {
+                addDebugStep(`🏁 ALGORITHM COMPLETE!\n` +
+                    `Total coastline tiles created: ${tileCount}\n` +
+                    `These tiles are placed in WATER areas adjacent to land\n` +
+                    `They provide the transition between land and water\n\n` +
+                    `Key insight: Coastline tiles go in water, NOT on land!`);
             }
             
             console.log(`✅ Generated ${tileCount} coastline tiles with 0 duplicates guaranteed!`);
@@ -670,6 +777,7 @@
             
             const ctx = canvas.getContext('2d');
             const tileSize = Math.min(canvas.width / mapSize.w, canvas.height / mapSize.h);
+            currentTileSize = tileSize; // Store for click handling
             
             // Clear canvas
             ctx.fillStyle = '#1e3a8a'; // Deep water blue
@@ -684,21 +792,48 @@
                 }
             }
             
-            // Highlight coastline tiles
-            Object.values(coastlineData).forEach(tile => {
-                const x = tile.x * tileSize;
-                const y = tile.y * tileSize;
-                
-                // Highlight with semi-transparent blue
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.7)';
-                ctx.fillRect(x, y, tileSize, tileSize);
-                
-                // Draw tile ID
-                ctx.fillStyle = 'white';
-                ctx.font = `${Math.max(8, tileSize/3)}px Arial`;
-                ctx.textAlign = 'center';
-                ctx.fillText(tile.config.id, x + tileSize/2, y + tileSize/2 + 3);
-            });
+            // Highlight coastline tiles and render custom tile data (only if enabled)
+            if (showCoastlineTiles) {
+                Object.values(coastlineData).forEach(tile => {
+                    const x = (tile.renderX || tile.x) * tileSize;
+                    const y = (tile.renderY || tile.y) * tileSize;
+                    
+                    // Check if we have custom tile data for this pattern
+                    const customData = tilePixelData.get(tile.config.id);
+                    
+                    if (customData && tileSize >= 10) {
+                        // Render custom tile data
+                        const pixelSize = tileSize / 20;
+                        for (let py = 0; py < 20; py++) {
+                            for (let px = 0; px < 20; px++) {
+                                const pixelIndex = py * 20 + px;
+                                if (customData[pixelIndex]) {
+                                    ctx.fillStyle = '#8B4513'; // Land brown
+                                    ctx.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
+                                }
+                            }
+                        }
+                    } else {
+                        // Default rendering - highlight with semi-transparent blue
+                        ctx.fillStyle = 'rgba(59, 130, 246, 0.7)';
+                        ctx.fillRect(x, y, tileSize, tileSize);
+                    }
+                    
+                    // Add border to make tiles more clickable
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, tileSize, tileSize);
+                    
+                    // Draw tile ID
+                    ctx.fillStyle = 'white';
+                    ctx.font = `bold ${Math.max(8, tileSize/3)}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = 'black';
+                    ctx.shadowBlur = 2;
+                    ctx.fillText(tile.config.id, x + tileSize/2, y + tileSize/2 + 3);
+                    ctx.shadowBlur = 0;
+                });
+            }
             
             // Draw grid
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
@@ -985,6 +1120,107 @@
             
             console.log(`Map size changed to ${mapSize.w}x${mapSize.h}`);
             regenerateIsland();
+        }
+        
+        // Debug system for step-by-step analysis
+        let debugSteps = [];
+        let currentDebugStep = 0;
+        let isDebugging = false;
+        
+        function stepThroughAlgorithm() {
+            console.log('🔍 Starting step-by-step debugging mode...');
+            debugSteps = [];
+            currentDebugStep = 0;
+            isDebugging = true;
+            
+            document.getElementById('debugPanel').style.display = 'block';
+            document.getElementById('stepBtn').textContent = '🔍 Debugging...';
+            document.getElementById('stepBtn').disabled = true;
+            
+            // Run the algorithm with debug tracking
+            applyMarchingSquares(true); // Pass debug flag
+            
+            document.getElementById('stepBtn').textContent = '🔍 Step Through Algorithm';
+            document.getElementById('stepBtn').disabled = false;
+            
+            if (debugSteps.length > 0) {
+                currentDebugStep = 0;
+                showDebugStep(0);
+                updateStepCounter();
+            }
+        }
+        
+        function resetDebugger() {
+            debugSteps = [];
+            currentDebugStep = 0;
+            isDebugging = false;
+            document.getElementById('debugPanel').style.display = 'none';
+            document.getElementById('debugInfo').textContent = '';
+        }
+        
+        function nextDebugStep() {
+            if (currentDebugStep < debugSteps.length - 1) {
+                currentDebugStep++;
+                showDebugStep(currentDebugStep);
+                updateStepCounter();
+            }
+        }
+        
+        function prevDebugStep() {
+            if (currentDebugStep > 0) {
+                currentDebugStep--;
+                showDebugStep(currentDebugStep);
+                updateStepCounter();
+            }
+        }
+        
+        function showDebugStep(stepIndex) {
+            if (stepIndex >= 0 && stepIndex < debugSteps.length) {
+                const step = debugSteps[stepIndex];
+                document.getElementById('debugInfo').textContent = step.info;
+                
+                // Highlight the tile being processed if applicable
+                if (step.x !== undefined && step.y !== undefined) {
+                    highlightDebugTile(step.x, step.y, step.color || 'yellow');
+                }
+            }
+        }
+        
+        function updateStepCounter() {
+            document.getElementById('stepCounter').textContent = 
+                `Step ${currentDebugStep + 1} of ${debugSteps.length}`;
+            
+            document.getElementById('prevStepBtn').disabled = currentDebugStep === 0;
+            document.getElementById('nextStepBtn').disabled = currentDebugStep === debugSteps.length - 1;
+        }
+        
+        function highlightDebugTile(x, y, color = 'yellow') {
+            const canvas = document.getElementById('mapCanvas');
+            const ctx = canvas.getContext('2d');
+            const tileSize = canvas.width / mapSize.w;
+            
+            // Draw highlight overlay
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+            ctx.globalAlpha = 1.0;
+            
+            // Draw border
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+        }
+        
+        function addDebugStep(info, x = undefined, y = undefined, color = undefined) {
+            if (isDebugging) {
+                debugSteps.push({
+                    info: info,
+                    x: x,
+                    y: y,
+                    color: color,
+                    timestamp: Date.now()
+                });
+            }
         }
         
         // Tile Editor Functionality
@@ -1305,6 +1541,11 @@
             }
         }
         
+        // Alias for renderMap to match the editor calls
+        function renderIsland() {
+            renderMap();
+        }
+        
         // Variables for tile editing
         let currentEditingPattern = null;
         let currentEditingPos = null;
@@ -1321,17 +1562,23 @@
                 const scaleX = mapCanvas.width / rect.width;
                 const scaleY = mapCanvas.height / rect.height;
                 
-                const x = Math.floor((e.clientX - rect.left) * scaleX / 20); // 20px per tile
-                const y = Math.floor((e.clientY - rect.top) * scaleY / 20);
+                const x = Math.floor((e.clientX - rect.left) * scaleX / currentTileSize);
+                const y = Math.floor((e.clientY - rect.top) * scaleY / currentTileSize);
                 
                 // Check if this position has a coastline tile
                 const tileKey = `${x},${y}`;
-                if (currentTileMap.has(tileKey)) {
-                    const pattern = currentTileMap.get(tileKey);
+                console.log(`Clicked at grid position (${x}, ${y}), tileKey: ${tileKey}`);
+                console.log('Available coastline tiles:', Object.keys(coastlineData));
+                
+                if (coastlineData[tileKey]) {
+                    const pattern = coastlineData[tileKey].config.id;
+                    console.log(`Found coastline tile at (${x}, ${y}) with pattern ${pattern}`);
                     loadTileIntoEditor(pattern, x, y);
                     
                     // Highlight selected tile
                     highlightSelectedTile(x, y);
+                } else {
+                    console.log(`No coastline tile found at (${x}, ${y})`);
                 }
             });
             
@@ -1351,7 +1598,7 @@
             const ctx = canvas.getContext('2d');
             ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = 3;
-            ctx.strokeRect(x * 20, y * 20, 20, 20);
+            ctx.strokeRect(x * currentTileSize, y * currentTileSize, currentTileSize, currentTileSize);
             
             // Store selection
             selectedTilePos = { x, y };
@@ -1362,7 +1609,11 @@
             currentEditingPos = { x: tileX, y: tileY };
             
             // Update title
-            document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern} at (${tileX}, ${tileY})`;
+            if (tileX >= 0 && tileY >= 0) {
+                document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern} at (${tileX}, ${tileY})`;
+            } else {
+                document.getElementById('selectedTileTitle').textContent = `Editing Pattern ${pattern}`;
+            }
             
             // Load pattern info
             updatePatternInfo(pattern);
@@ -1371,18 +1622,36 @@
             const editorCanvas = document.getElementById('editorCanvas');
             const editorCtx = editorCanvas.getContext('2d');
             
-            // Get current tile data or create default
-            const tileKey = `${tileX},${tileY}`;
-            let tileData = customTileData.get(tileKey);
+            // Clear the editor first
+            editorCtx.fillStyle = '#4169E1'; // Water blue
+            editorCtx.fillRect(0, 0, editorCanvas.width, editorCanvas.height);
             
-            if (!tileData && marchingSquaresConfig.patterns[pattern]) {
+            // Get current tile data or create default
+            let tileData = tilePixelData.get(pattern); // Use pattern as key for custom tile data
+            
+            if (!tileData) {
                 // Create default tile data from configuration
                 tileData = createDefaultTileData(pattern);
-                customTileData.set(tileKey, tileData);
+                tilePixelData.set(pattern, tileData);
+                console.log(`Created default tile data for pattern ${pattern}`);
+            } else {
+                console.log(`Loaded existing tile data for pattern ${pattern}`);
+            }
+            
+            // Force regenerate default data to ensure consistency
+            if (tileX === -1 && tileY === -1) {
+                // When selecting from pattern grid, always use default
+                tileData = createDefaultTileData(pattern);
+                tilePixelData.set(pattern, tileData);
+                console.log(`Regenerated default tile data for pattern ${pattern}`);
             }
             
             if (tileData) {
                 // Draw tile data to editor
+                console.log(`Drawing pattern ${pattern} to editor. Sample pixels:`, [
+                    tileData[0], tileData[19], tileData[380], tileData[399]
+                ]);
+                
                 for (let y = 0; y < 20; y++) {
                     for (let x = 0; x < 20; x++) {
                         const pixelIndex = y * 20 + x;
@@ -1395,12 +1664,19 @@
                 
                 // Update preview
                 updateTilePreview();
+            } else {
+                console.error(`No tile data found for pattern ${pattern}`);
             }
         }
         
         function updatePatternInfo(pattern) {
             const info = document.getElementById('patternInfo');
-            const config = marchingSquaresConfig.patterns[pattern];
+            
+            // Find the configuration with this pattern ID
+            let config = null;
+            if (marchingSquaresConfig && marchingSquaresConfig.configurations) {
+                config = marchingSquaresConfig.configurations.find(c => c.id === pattern);
+            }
             
             if (config) {
                 info.innerHTML = `
@@ -1421,43 +1697,121 @@
             // Create a 20x20 array based on the pattern type
             const data = new Array(400).fill(false);
             
-            // Simple pattern-based generation
+            // Map pattern IDs to basic shapes based on Marching Squares logic
             switch (pattern) {
                 case 0: // All water
+                    break;
+                case 1: // SW Corner (bottom-left)
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 2: // SE Corner (bottom-right)
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 3: // South Edge (bottom)
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 0; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 4: // NE Corner (top-right)
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 5: // SW-NE Diagonal
+                    for (let y = 0; y < 20; y++) {
+                        for (let x = 0; x < 20; x++) {
+                            if ((y < 10 && x >= 10) || (y >= 10 && x < 10)) {
+                                data[y * 20 + x] = true;
+                            }
+                        }
+                    }
+                    break;
+                case 6: // East Edge (right)
+                    for (let y = 0; y < 20; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 7: // SE Concave (missing NW)
+                    data.fill(true);
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = false;
+                        }
+                    }
+                    break;
+                case 8: // NW Corner (top-left)
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 9: // West Edge (left)
+                    for (let y = 0; y < 20; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 10: // NW-SE Diagonal
+                    for (let y = 0; y < 20; y++) {
+                        for (let x = 0; x < 20; x++) {
+                            if ((y < 10 && x < 10) || (y >= 10 && x >= 10)) {
+                                data[y * 20 + x] = true;
+                            }
+                        }
+                    }
+                    break;
+                case 11: // SW Concave (missing NE)
+                    data.fill(true);
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = false;
+                        }
+                    }
+                    break;
+                case 12: // North Edge (top)
+                    for (let y = 0; y < 10; y++) {
+                        for (let x = 0; x < 20; x++) {
+                            data[y * 20 + x] = true;
+                        }
+                    }
+                    break;
+                case 13: // NW Concave (missing SE)
+                    data.fill(true);
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 10; x < 20; x++) {
+                            data[y * 20 + x] = false;
+                        }
+                    }
+                    break;
+                case 14: // NE Concave (missing SW)
+                    data.fill(true);
+                    for (let y = 10; y < 20; y++) {
+                        for (let x = 0; x < 10; x++) {
+                            data[y * 20 + x] = false;
+                        }
+                    }
                     break;
                 case 15: // All land
                     data.fill(true);
                     break;
-                case 1: // Bottom-left corner
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 2: // Bottom-right corner
-                    for (let y = 10; y < 20; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 4: // Top-right corner
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 10; x < 20; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
-                case 8: // Top-left corner
-                    for (let y = 0; y < 10; y++) {
-                        for (let x = 0; x < 10; x++) {
-                            data[y * 20 + x] = true;
-                        }
-                    }
-                    break;
                 default:
-                    // For other patterns, create a basic shape
+                    // For unknown patterns, create a basic shape
                     for (let y = 5; y < 15; y++) {
                         for (let x = 5; x < 15; x++) {
                             data[y * 20 + x] = true;
@@ -1469,7 +1823,6 @@
         }
         
         // Editor interaction functions
-        let isEditing = false;
         let currentEditMode = 'land'; // 'land' or 'water'
         
         function startEditing(e) {
@@ -1486,12 +1839,12 @@
             const y = Math.floor((e.clientY - rect.top) / 8);
             
             if (x >= 0 && x < 20 && y >= 0 && y < 20) {
-                const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
-                let tileData = customTileData.get(tileKey);
+                const pattern = currentEditingPattern;
+                let tileData = tilePixelData.get(pattern);
                 
                 if (!tileData) {
                     tileData = createDefaultTileData(currentEditingPattern);
-                    customTileData.set(tileKey, tileData);
+                    tilePixelData.set(pattern, tileData);
                 }
                 
                 const pixelIndex = y * 20 + x;
@@ -1509,6 +1862,11 @@
                 if (selectedTilePos) {
                     highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
                 }
+                
+                // Update pattern grid
+                if (currentEditingPattern !== null) {
+                    drawPatternInCell(currentEditingPattern);
+                }
             }
         }
         
@@ -1517,11 +1875,10 @@
         }
         
         function clearTile() {
-            if (!currentEditingPos) return;
+            if (!currentEditingPattern) return;
             
-            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
             const tileData = new Array(400).fill(false);
-            customTileData.set(tileKey, tileData);
+            tilePixelData.set(currentEditingPattern, tileData);
             
             // Redraw editor
             const editorCanvas = document.getElementById('editorCanvas');
@@ -1534,14 +1891,18 @@
             if (selectedTilePos) {
                 highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
             }
+            
+            // Update pattern grid
+            if (currentEditingPattern !== null) {
+                drawPatternInCell(currentEditingPattern);
+            }
         }
         
         function resetTileToDefault() {
-            if (!currentEditingPos || !currentEditingPattern) return;
+            if (!currentEditingPattern) return;
             
-            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
             const tileData = createDefaultTileData(currentEditingPattern);
-            customTileData.set(tileKey, tileData);
+            tilePixelData.set(currentEditingPattern, tileData);
             
             // Redraw editor
             const editorCanvas = document.getElementById('editorCanvas');
@@ -1562,6 +1923,52 @@
             if (selectedTilePos) {
                 highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
             }
+            
+            // Update pattern grid
+            if (currentEditingPattern !== null) {
+                drawPatternInCell(currentEditingPattern);
+            }
+        }
+        
+        function forceResetToTheory() {
+            if (!currentEditingPattern) return;
+            
+            console.log(`Force resetting pattern ${currentEditingPattern} to theoretical default`);
+            
+            // Always create fresh default data
+            const tileData = createDefaultTileData(currentEditingPattern);
+            tilePixelData.set(currentEditingPattern, tileData);
+            
+            // Redraw editor
+            const editorCanvas = document.getElementById('editorCanvas');
+            const editorCtx = editorCanvas.getContext('2d');
+            
+            // Clear first
+            editorCtx.fillStyle = '#4169E1';
+            editorCtx.fillRect(0, 0, editorCanvas.width, editorCanvas.height);
+            
+            for (let y = 0; y < 20; y++) {
+                for (let x = 0; x < 20; x++) {
+                    const pixelIndex = y * 20 + x;
+                    const isLand = tileData[pixelIndex];
+                    
+                    editorCtx.fillStyle = isLand ? '#8B4513' : '#4169E1';
+                    editorCtx.fillRect(x * 8, y * 8, 8, 8);
+                }
+            }
+            
+            updateTilePreview();
+            renderIsland();
+            if (selectedTilePos) {
+                highlightSelectedTile(selectedTilePos.x, selectedTilePos.y);
+            }
+            
+            // Update pattern grid
+            if (currentEditingPattern !== null) {
+                drawPatternInCell(currentEditingPattern);
+            }
+            
+            console.log(`Pattern ${currentEditingPattern} reset complete`);
         }
         
         function saveTileChanges() {
@@ -1572,13 +1979,12 @@
         }
         
         function updateTilePreview() {
-            if (!currentEditingPos) return;
+            if (!currentEditingPattern) return;
             
             const previewCanvas = document.getElementById('previewCanvas');
             const previewCtx = previewCanvas.getContext('2d');
             
-            const tileKey = `${currentEditingPos.x},${currentEditingPos.y}`;
-            const tileData = customTileData.get(tileKey);
+            const tileData = tilePixelData.get(currentEditingPattern);
             
             if (tileData) {
                 // Draw scaled down version (4x4 pixels per tile pixel)
@@ -1594,10 +2000,96 @@
             }
         }
         
+        function populatePatternGrid() {
+            const grid = document.getElementById('patternGrid');
+            if (!grid) return;
+            
+            let html = '';
+            
+            // Create all 16 patterns (0-15)
+            for (let i = 0; i < 16; i++) {
+                html += `
+                    <div class="pattern-cell" onclick="selectPatternForEditing(${i})" 
+                         style="border: 1px solid #ccc; cursor: pointer; padding: 2px; background: white;">
+                        <canvas id="pattern-${i}" width="40" height="40" 
+                                style="display: block; image-rendering: pixelated;"></canvas>
+                        <div style="text-align: center; font-size: 0.7em; margin-top: 2px;">${i}</div>
+                    </div>
+                `;
+            }
+            
+            grid.innerHTML = html;
+            
+            // Draw all patterns
+            setTimeout(() => {
+                for (let i = 0; i < 16; i++) {
+                    drawPatternInCell(i);
+                }
+            }, 100);
+        }
+        
+        function drawPatternInCell(pattern) {
+            const canvas = document.getElementById(`pattern-${pattern}`);
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // Clear with water color
+            ctx.fillStyle = '#4169E1';
+            ctx.fillRect(0, 0, 40, 40);
+            
+            // Get or create tile data
+            let tileData = tilePixelData.get(pattern);
+            if (!tileData) {
+                tileData = createDefaultTileData(pattern);
+                tilePixelData.set(pattern, tileData);
+            }
+            
+            // Draw the pattern (2x2 pixels per tile pixel)
+            for (let y = 0; y < 20; y++) {
+                for (let x = 0; x < 20; x++) {
+                    const pixelIndex = y * 20 + x;
+                    if (tileData[pixelIndex]) {
+                        ctx.fillStyle = '#8B4513'; // Land brown
+                        ctx.fillRect(x * 2, y * 2, 2, 2);
+                    }
+                }
+            }
+        }
+        
+        function selectPatternForEditing(pattern) {
+            loadTileIntoEditor(pattern, -1, -1); // Use -1,-1 to indicate pattern selector origin
+            
+            // Highlight selected pattern
+            document.querySelectorAll('.pattern-cell').forEach(cell => {
+                cell.style.border = '1px solid #ccc';
+            });
+            
+            const selectedCell = document.querySelector(`#pattern-${pattern}`).parentElement;
+            if (selectedCell) {
+                selectedCell.style.border = '2px solid #ff0000';
+            }
+        }
+        
+        function toggleCoastlineDisplay() {
+            showCoastlineTiles = !showCoastlineTiles;
+            const btn = document.getElementById('toggleBtn');
+            
+            if (showCoastlineTiles) {
+                btn.textContent = '👁️ Hide Coastline Tiles';
+            } else {
+                btn.textContent = '🙈 Show Coastline Tiles';
+            }
+            
+            // Re-render the map
+            renderMap();
+        }
+        
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             loadMarchingSquaresConfig();
             initializeTileEditor();
+            populatePatternGrid();
         });
     </script>
 </body>
