@@ -3,7 +3,16 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "node run-frontend.js"
+        "postinstall": "cd frontend && npm install",
+        "dev": "node run-frontend.js",
+        "build": "cd frontend && npm run build",
+        "preview": "cd frontend && npm run preview",
+        "typecheck": "cd frontend && npm run typecheck"
     },
-    "dependencies": {}
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
 }

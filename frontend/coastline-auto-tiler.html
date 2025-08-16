@@ -507,6 +507,12 @@
             { id: 26, pattern: 0b00110000, name: "South + SW" },
             { id: 27, pattern: 0b11000000, name: "West + NW" },
             
+            // Missing cardinal + adjacent combinations
+            { id: 47, pattern: 0b11100000, name: "North + West + NW" },
+            { id: 48, pattern: 0b00000111, name: "North + East + NE" },
+            { id: 49, pattern: 0b00011100, name: "East + South + SE" },
+            { id: 50, pattern: 0b01110000, name: "South + West + SW" },
+            
             // Complex inside corners
             { id: 28, pattern: 0b01000111, name: "Complex NE Inside" },
             { id: 29, pattern: 0b01011100, name: "Complex SE Inside" },
@@ -564,49 +570,69 @@
         function renderAtlasTilePattern(ctx, x, y, size, autoTileInfo) {
             const pattern = autoTileInfo.pattern;
             
-            // Draw the 3x3 pattern grid just like in the atlas
-            const cellSize = Math.floor(size / 3);
+            // Clear the area with base water color
+            ctx.fillStyle = '#4682B4';
+            ctx.fillRect(x, y, size, size);
             
-            // 8-direction layout matching the atlas
-            const directions = [
-                { dx: -1, dy: -1, bit: 7 }, // NW
-                { dx: 0, dy: -1, bit: 0 },  // N  
-                { dx: 1, dy: -1, bit: 1 },  // NE
-                { dx: -1, dy: 0, bit: 6 },  // W
-                { dx: 0, dy: 0, bit: -1 },  // Center (current tile)
-                { dx: 1, dy: 0, bit: 2 },   // E
-                { dx: -1, dy: 1, bit: 5 },  // SW
-                { dx: 0, dy: 1, bit: 4 },   // S
-                { dx: 1, dy: 1, bit: 3 }    // SE
-            ];
+            const landColor = '#8B4513';
             
-            for (let i = 0; i < 9; i++) {
-                const cellX = x + (i % 3) * cellSize;
-                const cellY = y + Math.floor(i / 3) * cellSize;
-                const dir = directions[i];
-                
-                if (dir.bit === -1) {
-                    // Current tile (center) - coastline tile
-                    ctx.fillStyle = '#4CAF50'; // Green for coastline
-                } else {
-                    // Check if this direction has land in the pattern
-                    const hasLand = pattern & (1 << dir.bit);
-                    ctx.fillStyle = hasLand ? '#8B4513' : '#4682B4'; // Brown for land, blue for water
-                }
-                
-                ctx.fillRect(cellX, cellY, cellSize, cellSize);
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(cellX, cellY, cellSize, cellSize);
+            // Helper function to check if a bit is set
+            const hasBit = (bit) => (pattern & (1 << bit)) !== 0;
+            
+            ctx.fillStyle = landColor;
+            
+            const quarter = size / 4;
+            const half = size / 2;
+            const threeQuarter = size * 0.75;
+            
+            // Straight edges - land extends into tile from land neighbors
+            if (hasBit(0)) { // North neighbor is land
+                ctx.fillRect(x + quarter, y, half, quarter);
+            }
+            if (hasBit(2)) { // East neighbor is land  
+                ctx.fillRect(x + threeQuarter, y + quarter, quarter, half);
+            }
+            if (hasBit(4)) { // South neighbor is land
+                ctx.fillRect(x + quarter, y + threeQuarter, half, quarter);
+            }
+            if (hasBit(6)) { // West neighbor is land
+                ctx.fillRect(x, y + quarter, quarter, half);
             }
             
-            // Add tile ID overlay
+            // Corner extensions - show corner if the corner neighbor is land OR both adjacent sides are land
+            if (hasBit(1) || (hasBit(0) && hasBit(2))) { // NorthEast
+                ctx.fillRect(x + threeQuarter, y, quarter, quarter);
+            }
+            if (hasBit(3) || (hasBit(2) && hasBit(4))) { // SouthEast  
+                ctx.fillRect(x + threeQuarter, y + threeQuarter, quarter, quarter);
+            }
+            if (hasBit(5) || (hasBit(4) && hasBit(6))) { // SouthWest
+                ctx.fillRect(x, y + threeQuarter, quarter, quarter);
+            }
+            if (hasBit(7) || (hasBit(6) && hasBit(0))) { // NorthWest
+                ctx.fillRect(x, y, quarter, quarter);
+            }
+            
+            // Debug: Show the actual bit pattern
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.fillRect(x + 2, y + 2, 45, 12);
+            ctx.fillStyle = 'black';
+            ctx.font = '8px monospace';
+            ctx.fillText(pattern.toString(2).padStart(8, '0'), x + 3, y + 11);
+            
+            // Add border
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, size, size);
+            
+            // Add tile ID
             ctx.fillStyle = 'white';
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 1;
-            ctx.font = 'bold 10px monospace';
-            ctx.strokeText(autoTileInfo.tileIndex.toString(), x + 2, y + 12);
-            ctx.fillText(autoTileInfo.tileIndex.toString(), x + 2, y + 12);
+            ctx.font = 'bold 12px monospace';
+            const idText = autoTileInfo.tileIndex.toString();
+            ctx.strokeText(idText, x + size - 20, y + size - 5);
+            ctx.fillText(idText, x + size - 20, y + size - 5);
         }
         
         // Initialize tile atlas viewer
@@ -738,11 +764,13 @@
                 });
             });
             
-            // Editor canvas - remove complex editing
-            // editorCanvas.addEventListener('mousedown', startEditing);
-            // editorCanvas.addEventListener('mousemove', continueEditing);
-            // editorCanvas.addEventListener('mouseup', stopEditing);
-            // editorCanvas.addEventListener('mouseleave', stopEditing);
+            // Editor canvas - restore tile editing functionality
+            console.log(`🔧 Setting up editor canvas event listeners...`);
+            editorCanvas.addEventListener('mousedown', startEditing);
+            editorCanvas.addEventListener('mousemove', continueEditing);
+            editorCanvas.addEventListener('mouseup', stopEditing);
+            editorCanvas.addEventListener('mouseleave', stopEditing);
+            console.log(`✅ Editor canvas event listeners attached`);
         }
         
         // Apply tile edit and update map in real-time
@@ -1001,24 +1029,33 @@
             
             // 8-direction check: for water tile, we check where LAND is
             const directions = [
-                { dx: 0, dy: -1, bit: 0 },  // North
-                { dx: 1, dy: -1, bit: 1 },  // NorthEast
-                { dx: 1, dy: 0, bit: 2 },   // East
-                { dx: 1, dy: 1, bit: 3 },   // SouthEast
-                { dx: 0, dy: 1, bit: 4 },   // South
-                { dx: -1, dy: 1, bit: 5 },  // SouthWest
-                { dx: -1, dy: 0, bit: 6 },  // West
-                { dx: -1, dy: -1, bit: 7 }  // NorthWest
+                { dx: 0, dy: -1, bit: 0, name: 'N' },   // North
+                { dx: 1, dy: -1, bit: 1, name: 'NE' },  // NorthEast
+                { dx: 1, dy: 0, bit: 2, name: 'E' },    // East
+                { dx: 1, dy: 1, bit: 3, name: 'SE' },   // SouthEast
+                { dx: 0, dy: 1, bit: 4, name: 'S' },    // South
+                { dx: -1, dy: 1, bit: 5, name: 'SW' },  // SouthWest
+                { dx: -1, dy: 0, bit: 6, name: 'W' },   // West
+                { dx: -1, dy: -1, bit: 7, name: 'NW' }  // NorthWest
             ];
             
+            const debugInfo = [];
+            
             for (const dir of directions) {
-                const neighborType = getTileType(x + dir.dx, y + dir.dy);
+                const neighborX = x + dir.dx;
+                const neighborY = y + dir.dy;
+                const neighborType = getTileType(neighborX, neighborY);
                 
                 // If neighbor is land (not water or null), set the bit
-                if (neighborType && neighborType !== 'water') {
+                const isLand = neighborType && neighborType !== 'water';
+                if (isLand) {
                     pattern |= (1 << dir.bit);
                 }
+                
+                debugInfo.push(`${dir.name}(${neighborX},${neighborY}):${neighborType || 'null'}=${isLand ? '1' : '0'}`);
             }
+            
+            console.log(`Tile (${x},${y}) pattern calc:`, debugInfo.join(', '), `=> ${pattern.toString(2).padStart(8, '0')} (${pattern})`);
             
             return pattern;
         }
@@ -1051,14 +1088,30 @@
             }
             
             // This is a coastline tile - calculate its pattern
-            const pattern = calculateLandPattern(x, y);
-            const tileId = findBestTileMatch(pattern);
+            const calculatedPattern = calculateLandPattern(x, y);
+            
+            // First try exact match
+            if (patternLookup.has(calculatedPattern)) {
+                const tileId = patternLookup.get(calculatedPattern);
+                const patternData = COASTLINE_PATTERNS.find(p => p.id === tileId);
+                
+                return {
+                    tileIndex: tileId,
+                    patternName: patternData?.name || "Unknown",
+                    pattern: calculatedPattern  // Use the calculated pattern
+                };
+            }
+            
+            // If no exact match, find closest match but UPDATE the pattern to match the assigned tile
+            const tileId = findBestTileMatch(calculatedPattern);
             const patternData = COASTLINE_PATTERNS.find(p => p.id === tileId);
+            
+            console.warn(`No exact match for pattern ${calculatedPattern.toString(2).padStart(8, '0')} at (${x},${y}), using fuzzy match tile ${tileId} with pattern ${patternData.pattern.toString(2).padStart(8, '0')}`);
             
             return {
                 tileIndex: tileId,
                 patternName: patternData?.name || "Unknown",
-                pattern: pattern
+                pattern: patternData?.pattern || calculatedPattern  // Use the tile's actual pattern, not the calculated one
             };
         }
         
@@ -1306,10 +1359,30 @@
             
             document.getElementById('tileInfo').innerHTML = infoHtml;
             
-            // Render the tile in the editor canvas
-            renderTileInEditor(tileType, autoTileInfo);
+            // Initialize editor with the selected tile's type for editing
+            initializeEditorForTile(tileType);
             
             log(`📝 Loaded tile (${x}, ${y}) - ${tileType} into editor`);
+        }
+        
+        // Initialize the editor canvas for pixel-level tile editing
+        function initializeEditorForTile(tileType) {
+            console.log(`🎨 Initializing editor for tile type: ${tileType}`);
+            
+            // Initialize editor data array
+            editorTileData = [];
+            for (let py = 0; py < 20; py++) {
+                editorTileData[py] = [];
+                for (let px = 0; px < 20; px++) {
+                    editorTileData[py][px] = tileType; // Fill with the base tile type
+                }
+            }
+            
+            // Render the editable grid
+            renderEditor();
+            
+            console.log(`✅ Editor initialized with 20x20 grid, base type: ${tileType}`);
+            console.log(`Editor canvas size: 320x320, pixel size: 16x16`);
         }
         
         // Render the current tile in the editor canvas
@@ -1342,12 +1415,15 @@
         }
         
         // Render the tile editor - updated for larger size
+        // Render the tile editor - updated for larger size
         function renderEditor() {
+            console.log(`🖼️ Rendering editor canvas...`);
             const editorSize = 320;
             const pixelSize = editorSize / 20; // 20x20 pixels
             
             editorCtx.clearRect(0, 0, editorSize, editorSize);
             
+            let pixelsRendered = 0;
             for (let py = 0; py < 20; py++) {
                 for (let px = 0; px < 20; px++) {
                     const x = px * pixelSize;
@@ -1365,53 +1441,77 @@
                     editorCtx.strokeStyle = '#666';
                     editorCtx.lineWidth = 1;
                     editorCtx.strokeRect(x, y, pixelSize, pixelSize);
+                    
+                    pixelsRendered++;
                 }
             }
+            console.log(`✅ Rendered ${pixelsRendered} pixels in editor (20x20 grid)`);
         }
         
         // Editor interaction - updated for larger size
         function startEditing(event) {
+            console.log(`🖱️ Start editing - mouse down on editor canvas`);
             isEditing = true;
             editPixel(event);
         }
         
         function continueEditing(event) {
             if (isEditing) {
+                console.log(`🖱️ Continue editing - mouse move while editing`);
                 editPixel(event);
             }
         }
         
         function stopEditing() {
+            console.log(`🖱️ Stop editing - mouse up or leave`);
             isEditing = false;
         }
         
-        // EDITOR FUNCTIONS DISABLED - Simplified editor just shows tiles
-        /*
+        // Pixel editing function - restored and improved
         function editPixel(event) {
             const rect = editorCanvas.getBoundingClientRect();
-            const x = Math.floor((event.clientX - rect.left) / 16); // 320/20 = 16
-            const y = Math.floor((event.clientY - rect.top) / 16);
+            const pixelSize = 320 / 20; // 16 pixels per grid cell
+            const x = Math.floor((event.clientX - rect.left) / pixelSize);
+            const y = Math.floor((event.clientY - rect.top) / pixelSize);
+            
+            console.log(`🎨 Edit pixel at canvas pos (${event.clientX - rect.left}, ${event.clientY - rect.top}) => grid (${x}, ${y}), pixel size: ${pixelSize}`);
             
             if (x >= 0 && x < 20 && y >= 0 && y < 20) {
+                // Initialize tile data if needed
+                if (!editorTileData[y]) {
+                    editorTileData[y] = [];
+                }
+                
                 editorTileData[y][x] = currentEditType;
                 renderEditor();
+                console.log(`✅ Painted pixel (${x}, ${y}) with ${currentEditType}`);
+                log(`Painted pixel (${x}, ${y}) with ${currentEditType}`);
+            } else {
+                console.log(`❌ Click outside grid bounds: (${x}, ${y})`);
             }
         }
-        */
         
         // Editor controls - updated for larger size
         function clearEditor() {
+            console.log(`🧹 Clearing editor...`);
             for (let py = 0; py < 20; py++) {
+                editorTileData[py] = editorTileData[py] || [];
                 for (let px = 0; px < 20; px++) {
                     editorTileData[py][px] = 'water';
                 }
             }
             renderEditor();
+            log('Editor cleared - all pixels set to water');
+            console.log(`✅ Editor cleared`);
         }
         
         function resetEditor() {
+            console.log(`🔄 Resetting editor...`);
             if (selectedTile) {
-                loadTileIntoEditor(selectedTile.x, selectedTile.y);
+                initializeEditorForTile(mapData[selectedTile.y][selectedTile.x]);
+                log(`Editor reset to tile (${selectedTile.x}, ${selectedTile.y})`);
+            } else {
+                log('No tile selected to reset');
             }
         }
         
