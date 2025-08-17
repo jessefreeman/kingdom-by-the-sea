@@ -1667,229 +1667,28 @@ showStart();
   getCreateMode: () => CREATE_MODE,
 };
 
-// ===== Height System =====
-// Rules:
-// - Water is height 0 flat
-// - Mountains are level 2, immediate neighbors level 1 (if land)
-// - In a connected mountain range, the center grows: assign higher based on surrounding mountains
-// - Heights descend by 1 per ring back to water
+// ===== Height System (Flattened) =====
+// Fixed heights by type; no neighbor-based adjustments.
+// - WATER: 0
+// - GRASS: 1
+// - FOREST: 2
+// - HUT/HOUSE/TOWN: 2
+// - MOUNTAIN: 4
+// - All others default to 1 if land (non-water)
 function computeHeightMap() {
-  const W = state.size.w,
-    H = state.size.h;
-  const I = (x: number, y: number) => y * W + x;
-  const DIRS4: ReadonlyArray<[number, number]> = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ];
-  const DIRS8: ReadonlyArray<[number, number]> = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-    [1, 1],
-    [1, -1],
-    [-1, 1],
-    [-1, -1],
-  ];
-
-  // Tunables for organic verticality
-  const PEAK_BASE = 5; // base seed for mountain tiles
-  const DEPTH_BOOST = 2; // extra per step toward interior of a range
-  const ADJ_BOOST = 1; // bonus per adjacent mountain (8-dir)
-  const FALLOFF = 1; // height loss per step when propagating out
-  const COAST_MAX = 3; // tiles from coast where we apply lowering
-  const COAST_WEIGHT = 1; // how much to lower near coast per missing distance
-  const MIN_MOUNTAIN = 4; // mountains are at least this high
-  const MAX_H = 30; // clamp to avoid extreme values
-
-  // 1) Baseline by tile type
-  const base = new Array(W * H).fill(0);
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const c = state.map[I(x, y)] as any;
-      const t = rt(c);
-      let h0 = 0;
-      if (t === T.WATER) h0 = 0;
-      else if (t === T.GRASS) h0 = 1;
-      else if (t === T.FOREST) h0 = 2;
-      else if (t === T.HILL) h0 = 3;
-      else if (t === T.MOUNTAIN) h0 = 3; // seed will raise higher
-      else h0 = 1; // buildings and others sit on land
-      base[I(x, y)] = h0;
-    }
-
-  // 2) Mountain range interior depth (8-dir) for range-peaks higher than edges
-  const mDepth = new Array(W * H).fill(-1);
-  const seedQ: Array<[number, number]> = [];
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let boundary = false;
-      for (const [dx, dy] of DIRS8) {
-        const nx = x + dx,
-          ny = y + dy;
-        if (!inBounds(nx, ny)) {
-          boundary = true;
-          break;
-        }
-        const nc = state.map[I(nx, ny)] as any;
-        if (!nc || rt(nc) !== T.MOUNTAIN) {
-          boundary = true;
-          break;
-        }
-      }
-      if (boundary) {
-        mDepth[i] = 0;
-        seedQ.push([x, y]);
-      }
-    }
-  // BFS inward to compute depth
-  while (seedQ.length) {
-    const [cx, cy] = seedQ.shift()!;
-    const ci = I(cx, cy);
-    for (const [dx, dy] of DIRS8) {
-      const nx = cx + dx,
-        ny = cy + dy;
-      if (!inBounds(nx, ny)) continue;
-      const ni = I(nx, ny);
-      const nc = state.map[ni] as any;
-      if (!nc || rt(nc) !== T.MOUNTAIN) continue;
-      if (mDepth[ni] === -1) {
-        mDepth[ni] = (mDepth[ci] | 0) + 1;
-        seedQ.push([nx, ny]);
-      }
-    }
-  }
-
-  // 3) Seed mountain potentials and propagate outward with falloff across land (8-dir)
-  const potential = new Array(W * H).fill(0);
-  const q: Array<[number, number]> = [];
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c || rt(c) !== T.MOUNTAIN) continue;
-      // Count adjacent mountains to boost ridges/lines
-      let adjM = 0;
-      for (const [dx, dy] of DIRS8) {
-        const nx = x + dx,
-          ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        const nc = state.map[I(nx, ny)] as any;
-        if (nc && rt(nc) === T.MOUNTAIN) adjM++;
-      }
-      const depth = Math.max(0, mDepth[i]);
-      const seedVal = Math.max(
-        MIN_MOUNTAIN,
-        PEAK_BASE + depth * DEPTH_BOOST + adjM * ADJ_BOOST
-      );
-      potential[i] = Math.max(potential[i], seedVal | 0);
-      q.push([x, y]);
-    }
-  // Multi-source BFS propagation (skip water)
-  while (q.length) {
-    const [cx, cy] = q.shift()!;
-    const ci = I(cx, cy);
-    const cur = potential[ci] | 0;
-    if (cur <= 0) continue;
-    for (const [dx, dy] of DIRS8) {
-      const nx = cx + dx,
-        ny = cy + dy;
-      if (!inBounds(nx, ny)) continue;
-      const ni = I(nx, ny);
-      const nc = state.map[ni] as any;
-      if (!nc || rt(nc) === T.WATER) continue; // don't raise water
-      const cand = cur - FALLOFF;
-      if (cand > (potential[ni] | 0)) {
-        potential[ni] = cand;
-        q.push([nx, ny]);
-      }
-    }
-  }
-
-  // 4) Distance to water (4-dir) to lower land near coasts for natural shorelines
-  const dist = new Array(W * H).fill(Number.POSITIVE_INFINITY);
-  const dq: Array<[number, number]> = [];
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (c && rt(c) === T.WATER) {
-        dist[i] = 0;
-        dq.push([x, y]);
-      }
-    }
-  while (dq.length) {
-    const [cx, cy] = dq.shift()!;
-    const ci = I(cx, cy);
-    for (const [dx, dy] of DIRS4) {
-      const nx = cx + dx,
-        ny = cy + dy;
-      if (!inBounds(nx, ny)) continue;
-      const ni = I(nx, ny);
-      const nd = (dist[ci] | 0) + 1;
-      if (nd < (dist[ni] as number)) {
-        dist[ni] = nd;
-        dq.push([nx, ny]);
-      }
-    }
-  }
-
-  // 5) Combine base + propagated potential - coastal penalty, then enforce dominance
-  const heights = new Array(W * H).fill(0);
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
+  for (let y = 0; y < state.size.h; y++)
+    for (let x = 0; x < state.size.w; x++) {
+      const c = state.map[idx(x, y)] as any;
       if (!c) continue;
       const t = rt(c);
-      if (t === T.WATER) {
-        heights[i] = 0;
-        continue;
-      }
-      const dw = Math.min(COAST_MAX, dist[i] as number);
-      const coastPenalty =
-        Math.max(0, COAST_MAX - (Number.isFinite(dw) ? dw : COAST_MAX)) *
-        COAST_WEIGHT;
-      const combined = Math.max(base[i] | 0, (potential[i] | 0) - coastPenalty);
-      heights[i] = Math.max(1, Math.min(MAX_H, Math.floor(combined)));
-    }
-
-  // Enforce mountain tiles stand above any non-mountain neighbors
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c || rt(c) !== T.MOUNTAIN) continue;
-      let maxN = -Infinity;
-      for (const [dx, dy] of DIRS8) {
-        const nx = x + dx,
-          ny = y + dy;
-        if (!inBounds(nx, ny)) continue;
-        const ni = I(nx, ny);
-        const nc = state.map[ni] as any;
-        if (!nc) continue;
-        if (rt(nc) === T.MOUNTAIN) continue;
-        maxN = Math.max(maxN, heights[ni] | 0);
-      }
-      const req = Math.max(
-        MIN_MOUNTAIN,
-        maxN > -Infinity ? (maxN | 0) + 1 : MIN_MOUNTAIN
-      );
-      if ((heights[i] | 0) < req) heights[i] = req;
-    }
-
-  // 6) Assign back to cells
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      const i = I(x, y);
-      const c = state.map[i] as any;
-      if (!c) continue;
-      c.h = rt(c) === T.WATER ? 0 : Math.max(1, heights[i] | 0);
+      let h = 1; // default land height
+      if (t === T.WATER) h = 0;
+      else if (t === T.GRASS) h = 1;
+      else if (t === T.FOREST) h = 2;
+      else if (t === T.TOWN || (t && HOUSELINE.includes(t))) h = 2;
+      else if (t === T.MOUNTAIN) h = 4;
+      else h = 1;
+      c.h = h;
     }
 }
 
