@@ -674,10 +674,7 @@ class ThreeRenderer implements RendererInterface {
     const axisHelper = new THREE.AxesHelper(10);
     this.scene.add(axisHelper);
 
-    // Add a ground plane grid to show the floor (XZ plane at Y=0)
-    const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
-    gridHelper.position.y = 0; // Place at ground level (Y=0)
-    this.scene.add(gridHelper);
+  // (Removed) Ground plane grid: hidden to avoid double-grid visual
 
     // Add a large ocean plane that extends far beyond the map
     const oceanSize = 200; // Much larger than the map to create ocean horizon
