@@ -223,8 +223,8 @@ class ThreeRenderer implements RendererInterface {
       const useLetters = true;
       const useFog = tileType === T.WATER ? false : !isDiscovered;
 
-      let texture: any = null;
-      if (tileType === T.WATER && x != null && y != null) {
+  let texture: any = null;
+  if (tileType === T.WATER && x != null && y != null) {
         // Procedural water tile identical to the 2D renderer and the HTML demo
         const can = document.createElement("canvas");
         can.width = can.height = 16; // 16x16 tiles
@@ -276,14 +276,8 @@ class ThreeRenderer implements RendererInterface {
         texture.minFilter = THREE.NearestFilter;
       }
       if (!texture) {
-        // Land and fallback
-        let atlasType = tileType;
-        if (tileType === T.WATER) atlasType = 'water';
-        // Use coast_land as generic base for land if no biome art specified
-        if (tileType !== T.WATER && (tileType === T.GRASS || tileType === T.FOREST || tileType === T.MOUNTAIN || tileType === T.HILL)) {
-          atlasType = 'coast_land';
-        }
-        texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+        // Use the atlas texture mapped by tile type directly
+        texture = tileAtlas.getThreeTexture(tileType, useLetters, useFog);
       }
       if (texture) {
         // If we have atlas texture, we might still need to add overlays
@@ -307,7 +301,8 @@ class ThreeRenderer implements RendererInterface {
             };
             baseCanvas = tileAtlas.composeCoastCanvas(x, y, q);
           } else {
-            baseCanvas = tileAtlas.getTileCanvas(tileType === T.WATER ? 'water' : (tileType === T.GRASS || tileType === T.FOREST || tileType === T.MOUNTAIN || tileType === T.HILL ? 'coast_land' : tileType), useLetters, useFog);
+            // For land and other types, use the mapped atlas canvas directly
+            baseCanvas = tileAtlas.getTileCanvas(tileType, useLetters, useFog);
           }
           if (baseCanvas) {
             ctx.drawImage(baseCanvas, 0, 0);
