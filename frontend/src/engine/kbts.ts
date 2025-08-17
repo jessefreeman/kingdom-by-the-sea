@@ -331,15 +331,25 @@ let GEN_PARAMS = {
   mountains: 0.12, // ~12% of land becomes mountains (clustered)
   villages: 0.08, // ~8% of land becomes villages
 };
+// Organic island shaping parameters (debug-adjustable)
+let ORG_PARAMS: OrganicIslandParams = {
+  coastMargin: 1,
+  baseRadiusFrac: 0.5,
+  erodeIterations: 4,
+  erodePercent: 0.22,
+  lakePercent: 0.06,
+  minLakeDistToSea: 3,
+  maxLakeFlood: 24,
+};
 
 async function generate(
   seed = Date.now(),
   size: "small" | "medium" | "large" = "medium"
 ) {
   const sizes: Record<string, { w: number; h: number }> = {
-    small: { w: 8, h: 6 },
-    medium: { w: 10, h: 8 },
-    large: { w: 12, h: 8 },
+    small: { w: 16, h: 12 },
+    medium: { w: 20, h: 16 },
+    large: { w: 30, h: 20 },
   };
   
   // Initialize all RNG streams
@@ -369,16 +379,7 @@ async function generate(
     each((x, y, c: any) => { c.disc = true; c.h = 0; });
   } else {
     // Layer 1: organic island shape via coastal erosion + interior lake carving
-    const ORG: OrganicIslandParams = {
-      coastMargin: 1,
-      baseRadiusFrac: 0.5,
-      erodeIterations: 4,
-      erodePercent: 0.22,
-      lakePercent: 0.06,
-      minLakeDistToSea: 3,
-      maxLakeFlood: 24,
-    };
-    const mask = generateOrganicIslandHeight(state.size.w, state.size.h, worldGenRng!, ORG);
+  const mask = generateOrganicIslandHeight(state.size.w, state.size.h, worldGenRng!, ORG_PARAMS);
     for (let y = 0; y < state.size.h; y++)
       for (let x = 0; x < state.size.w; x++) {
         const cc = state.map[idx(x, y)] as any;
@@ -632,10 +633,10 @@ function tile(x: number, y: number, c: any) {
       tileCanvas = atlas.getTileCanvas(baseKey, useLetters, useFog);
     }
     if (tileCanvas) {
-      // Scale the 16x16 tile to the current tile size
+      // Scale the atlas tile to the current tile size
       ctx.save();
-      ctx.imageSmoothingEnabled = false; // Pixel-perfect scaling
-      ctx.drawImage(tileCanvas, px, py, ts, ts);
+      (ctx as any).imageSmoothingEnabled = false;
+      ctx.drawImage(tileCanvas, 0, 0, tileCanvas.width, tileCanvas.height, px, py, ts, ts);
       ctx.restore();
 
       // Add overlays
@@ -1520,9 +1521,9 @@ function showStart() {
     '<div class="title">New Game</div>' +
       '<div class="section"><label>Map Size' +
       '<select id="sz">' +
-      '<option value="small">Small (8×6)</option>' +
-      '<option value="medium" selected>Medium (10×8)</option>' +
-      '<option value="large">Large (12×8)</option>' +
+  '<option value="small">Small (16×12)</option>' +
+  '<option value="medium" selected>Medium (20×16)</option>' +
+  '<option value="large">Large (30×20)</option>' +
       "</select>" +
       "</label></div>" +
       '<div class="section"><label>Seed (optional)' +
@@ -1592,7 +1593,105 @@ function showStart() {
 $("save")?.addEventListener("click", () => save());
 $("load")?.addEventListener("click", () => load());
 $("reset")?.addEventListener("click", () => showStart());
+// Hook up Worldgen Debug panel in sidebar
+function setupWorldgenDebugPanel() {
+  const seedIn = $("seedIn") as HTMLInputElement | null;
+  const prevSeed = $("prevSeed") as HTMLButtonElement | null;
+  const nextSeed = $("nextSeed") as HTMLButtonElement | null;
+  const randomSeed = $("randomSeed") as HTMLButtonElement | null;
+  const regenNow = $("regenNow") as HTMLButtonElement | null;
+  const sizeSel = $("sizeSel") as HTMLSelectElement | null;
+  const f = $("forestSlider") as HTMLInputElement | null;
+  const m = $("mountSlider") as HTMLInputElement | null;
+  const v = $("villSlider") as HTMLInputElement | null;
+  const fOut = $("forestOut2");
+  const mOut = $("mountOut2");
+  const vOut = $("villOut2");
+  const erIter = $("erodeIter") as HTMLInputElement | null;
+  const erPct = $("erodePct") as HTMLInputElement | null;
+  const lakePct = $("lakePct") as HTMLInputElement | null;
+  const coastMargin = $("coastMargin") as HTMLInputElement | null;
+  const minLakeDist = $("minLakeDist") as HTMLInputElement | null;
+  const maxLakeFlood = $("maxLakeFlood") as HTMLInputElement | null;
+  const erIterOut = $("erodeIterOut");
+  const erPctOut = $("erodePctOut");
+  const lakePctOut = $("lakePctOut");
+  const coastMarginOut = $("coastMarginOut");
+  const minLakeDistOut = $("minLakeDistOut");
+  const maxLakeFloodOut = $("maxLakeFloodOut");
+
+  // Initialize inputs from current config
+  if (seedIn) seedIn.value = String(originalSeed || state.seed || "");
+  if (sizeSel) {
+    // pick closest match
+  const cur = `${state.size.w}x${state.size.h}`;
+  sizeSel.value = state.size.w === 16 && state.size.h === 12 ? "small" : state.size.w === 30 && state.size.h === 20 ? "large" : "medium";
+  }
+  if (f && fOut) { f.value = String(Math.round(GEN_PARAMS.forest * 100)); fOut.textContent = f.value + "%"; }
+  if (m && mOut) { m.value = String(Math.round(GEN_PARAMS.mountains * 100)); mOut.textContent = m.value + "%"; }
+  if (v && vOut) { v.value = String(Math.round(GEN_PARAMS.villages * 100)); vOut.textContent = v.value + "%"; }
+  if (erIter && erIterOut) { erIter.value = String(ORG_PARAMS.erodeIterations); erIterOut.textContent = erIter.value; }
+  if (erPct && erPctOut) { erPct.value = String(Math.round(ORG_PARAMS.erodePercent * 100)); erPctOut.textContent = erPct.value + "%"; }
+  if (lakePct && lakePctOut) { lakePct.value = String(Math.round(ORG_PARAMS.lakePercent * 100)); lakePctOut.textContent = lakePct.value + "%"; }
+  if (coastMargin && coastMarginOut) { coastMargin.value = String(ORG_PARAMS.coastMargin); coastMarginOut.textContent = coastMargin.value; }
+  if (minLakeDist && minLakeDistOut) { minLakeDist.value = String(ORG_PARAMS.minLakeDistToSea); minLakeDistOut.textContent = minLakeDist.value; }
+  if (maxLakeFlood && maxLakeFloodOut) { maxLakeFlood.value = String(ORG_PARAMS.maxLakeFlood); maxLakeFloodOut.textContent = maxLakeFlood.value; }
+
+  // Live labels
+  f?.addEventListener("input", () => { if (fOut) fOut.textContent = f.value + "%"; });
+  m?.addEventListener("input", () => { if (mOut) mOut.textContent = m.value + "%"; });
+  v?.addEventListener("input", () => { if (vOut) vOut.textContent = v.value + "%"; });
+  erIter?.addEventListener("input", () => { if (erIterOut) erIterOut.textContent = erIter.value; });
+  erPct?.addEventListener("input", () => { if (erPctOut) erPctOut.textContent = erPct.value + "%"; });
+  lakePct?.addEventListener("input", () => { if (lakePctOut) lakePctOut.textContent = lakePct.value + "%"; });
+  coastMargin?.addEventListener("input", () => { if (coastMarginOut) coastMarginOut.textContent = coastMargin.value; });
+  minLakeDist?.addEventListener("input", () => { if (minLakeDistOut) minLakeDistOut.textContent = minLakeDist.value; });
+  maxLakeFlood?.addEventListener("input", () => { if (maxLakeFloodOut) maxLakeFloodOut.textContent = maxLakeFlood.value; });
+
+  // Helpers
+  const parseSize = (): "small" | "medium" | "large" => {
+    const v = sizeSel?.value as any;
+    return v === "small" || v === "large" ? v : "medium";
+  };
+  const readParams = () => {
+    // Update configs from sliders before regen
+    if (f) GEN_PARAMS.forest = Math.max(0, Math.min(1, (parseInt(f.value, 10) || 0) / 100));
+    if (m) GEN_PARAMS.mountains = Math.max(0, Math.min(1, (parseInt(m.value, 10) || 0) / 100));
+    if (v) GEN_PARAMS.villages = Math.max(0, Math.min(1, (parseInt(v.value, 10) || 0) / 100));
+    if (erIter) ORG_PARAMS.erodeIterations = Math.max(0, Math.min(32, parseInt(erIter.value, 10) || 0));
+    if (erPct) ORG_PARAMS.erodePercent = Math.max(0, Math.min(1, (parseInt(erPct.value, 10) || 0) / 100));
+    if (lakePct) ORG_PARAMS.lakePercent = Math.max(0, Math.min(1, (parseInt(lakePct.value, 10) || 0) / 100));
+    if (coastMargin) ORG_PARAMS.coastMargin = Math.max(0, Math.min(6, parseInt(coastMargin.value, 10) || 0));
+    if (minLakeDist) ORG_PARAMS.minLakeDistToSea = Math.max(0, Math.min(20, parseInt(minLakeDist.value, 10) || 0));
+    if (maxLakeFlood) ORG_PARAMS.maxLakeFlood = Math.max(0, Math.min(999, parseInt(maxLakeFlood.value, 10) || 0));
+  };
+  const doRegen = async (seed: number, size?: any) => {
+    readParams();
+    await generate(seed, size || parseSize());
+    if (seedIn) seedIn.value = String(seed);
+  };
+
+  // Buttons
+  prevSeed?.addEventListener("click", async () => {
+    const cur = parseInt(seedIn?.value || String(originalSeed || state.seed || 0), 10) || 0;
+    await doRegen(cur - 1);
+  });
+  nextSeed?.addEventListener("click", async () => {
+    const cur = parseInt(seedIn?.value || String(originalSeed || state.seed || 0), 10) || 0;
+    await doRegen(cur + 1);
+  });
+  randomSeed?.addEventListener("click", async () => {
+    await doRegen(Date.now());
+  });
+  regenNow?.addEventListener("click", async () => {
+    const sz = parseSize();
+    const val = parseInt(seedIn?.value || "", 10);
+    await doRegen(Number.isFinite(val) ? val : Date.now(), sz);
+  });
+}
+
 showStart();
+setupWorldgenDebugPanel();
 
 // Expose KBTS for renderer/tests
 (window as any).KBTS = {
