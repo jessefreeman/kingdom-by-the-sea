@@ -6,6 +6,7 @@ import { setRenderer, draw, resize } from "./game";
 // Import new engine tests
 import { testRNGDeterminism } from "./tests/rng.determinism.tests";
 import { testEngineBasics } from "./tests/engine.basic.tests";
+import { testRendererPlugins } from "./tests/renderer.plugins.tests";
 
 // Wire up renderer switching for dev
 (window as any).KBTS_TS = { setRenderer, draw, resize };
@@ -14,6 +15,7 @@ import { testEngineBasics } from "./tests/engine.basic.tests";
 (window as any).KBTS_ENGINE_TESTS = {
   testRNGDeterminism,
   testEngineBasics,
+  testRendererPlugins,
 };
 
 window.addEventListener("resize", () => resize());

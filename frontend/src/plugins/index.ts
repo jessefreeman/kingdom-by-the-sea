@@ -1,3 +1,5 @@
-// Test plugin exports
+// Plugin exports
 
 export { NoOpPlugin } from './test/NoOpPlugin';
+export { ThreeRendererPlugin } from './renderer/three/ThreeRenderer';
+export { Canvas2DRendererPlugin } from './renderer/canvas2d/Canvas2DRenderer';

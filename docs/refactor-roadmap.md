@@ -33,10 +33,10 @@ Deliverables:
 
 ## Phase 2 — Renderer Plugins
 
-- ☐ Define `RendererPlugin` contract
-- ☐ Wrap existing ThreeJS renderer behind plugin API
-- ☐ Add minimal Canvas2D renderer for smoke tests
-- ☐ Swap between renderers via `main.ts` config
+- ✅ Define `RendererPlugin` contract
+- ✅ Wrap existing ThreeJS renderer behind plugin API
+- ✅ Add minimal Canvas2D renderer for smoke tests
+- ✅ Swap between renderers via `main.ts` config
 
 Deliverables:
 - `frontend/src/engine/contracts/plugins.ts`

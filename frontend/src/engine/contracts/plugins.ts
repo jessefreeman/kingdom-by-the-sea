@@ -29,6 +29,7 @@ export interface RendererPlugin extends EnginePlugin {
   kind: 'renderer';
   mount(target: HTMLElement): void;
   resize?(w: number, h: number): void;
+  getCanvas?(): HTMLCanvasElement | null;
 }
 
 export interface EngineOptions {
