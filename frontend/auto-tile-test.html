@@ -1,0 +1,279 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Coastline Autotiler – Draw Mode</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#0b1020; --panel:#121a34; --text:#e6ecff; --accent:#7aa2ff; }
+    html,body { height:100%; margin:0; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji; }
+    .wrap { display:grid; grid-template-columns:auto 1fr; gap:16px; padding:16px; height:100%; box-sizing:border-box; }
+    .panel { background:var(--panel); border:1px solid #232c54; border-radius:14px; padding:12px; min-width:260px; height:fit-content; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+    .panel h1 { font-size:16px; margin:0 0 6px; }
+    .row { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
+    label { opacity:.9; }
+    button { background:var(--accent); color:#07122b; border:0; border-radius:10px; padding:8px 12px; font-weight:600; cursor:pointer; }
+    canvas { background:#0a1228; border:1px solid #1c254a; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); image-rendering: pixelated; }
+    .legend { display:flex; gap:8px; flex-wrap:wrap; opacity:.85; }
+    .sw { width:14px; height:14px; border-radius:3px; display:inline-block; vertical-align:middle; margin-right:6px; }
+    small.hint{opacity:.75}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <h1>Coastline Autotiler (Draw)</h1>
+    <div class="row">
+      <label>Grid</label>
+      <input id="w" type="number" min="8" max="256" step="1" value="64"> ×
+      <input id="h" type="number" min="8" max="256" step="1" value="48">
+      <button id="clear">Clear</button>
+    </div>
+    <div class="row">
+      <label>Tool</label>
+      <select id="tool">
+        <option value="auto" selected>Auto (click toggles, drag follows)</option>
+        <option value="draw">Draw</option>
+        <option value="erase">Erase</option>
+      </select>
+    </div>
+    <div class="row">
+      <label><input id="showGrid" type="checkbox" checked> grid</label>
+      <label><input id="showCorners" type="checkbox" checked> corners</label>
+      <label><input id="showEdges" type="checkbox" checked> edges</label>
+    </div>
+    <div class="row"><small class="hint">Tip: In <b>Auto</b>, clicking land erases; clicking water draws. Drag to paint continuous strokes.</small></div>
+    <div class="legend">
+      <div><span class="sw" style="background:#2fb17a"></span>Land</div>
+      <div><span class="sw" style="background:#1f6feb"></span>Edge</div>
+      <div><span class="sw" style="background:#ffcc00"></span>Outer corner</div>
+      <div><span class="sw" style="background:#ff6b6b"></span>Inner corner</div>
+    </div>
+    <div class="row">
+      <h2 style="margin:6px 0 0; font-size:14px">Tilesheet</h2>
+    </div>
+    <div class="row" style="align-items:flex-start; gap:12px">
+      <canvas id="tilesheet" width="256" height="256" style="background:#0a1228; border:1px solid #1c254a; border-radius:10px; image-rendering: pixelated"></canvas>
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <button id="exportTiles">Download PNG</button>
+        <small class="hint">Layout (16×16 each, left→right, top→bottom):<br>
+        0 Water • 1 Land • 2-5 Edges (N,E,S,W) • 6-9 Corners (NW,NE,SW,SE) • 10-13 Caps (NW,NE,SW,SE)</small>
+        <label style="display:flex;align-items:center;gap:6px"><input id="showTileIds" type="checkbox"> Show tile IDs</label>
+      </div>
+    </div>
+  </div>
+  <canvas id="c" width="1024" height="768"></canvas>
+</div>
+
+<script>
+"use strict";
+const TS = 16; // fixed tile size
+
+// --- Grid helpers ---
+function makeGrid(w,h,val=0){ return Array.from({length:h},()=>Array(w).fill(val)); }
+function inBounds(g,x,y){ const H=g.length,W=g[0].length; return y>=0&&y<H&&x>=0&&x<W; }
+function at(g,x,y){ return inBounds(g,x,y)?g[y][x]:0; }
+
+// --- Coast autotile (outside edges on WATER tiles) ---
+function autotileCoast(grid){
+  const landLayer=[], edges=[], corners=[], caps=[]; // edges/corners/caps are on WATER tiles
+  const H=grid.length, W=grid[0].length;
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const self = at(grid,x,y);
+      if(self===1){ landLayer.push({x,y}); continue; }
+      const N=at(grid,x,y-1), E=at(grid,x+1,y), S=at(grid,x,y+1), Wn=at(grid,x-1,y);
+      const NE=at(grid,x+1,y-1), NW=at(grid,x-1,y-1), SE=at(grid,x+1,y+1), SW=at(grid,x-1,y+1);
+      // edges if touching land on 4-neighborhood
+      if(N===1) edges.push({x,y,d:'N'});
+      if(E===1) edges.push({x,y,d:'E'});
+      if(S===1) edges.push({x,y,d:'S'});
+      if(Wn===1) edges.push({x,y,d:'W'});
+      // convex corners if two adjacent orthogonals are land (diagonal doesn't matter)
+      if(N===1 && Wn===1) corners.push({x,y,c:'NW'});
+      if(N===1 && E===1)  corners.push({x,y,c:'NE'});
+      if(S===1 && Wn===1) corners.push({x,y,c:'SW'});
+      if(S===1 && E===1)  corners.push({x,y,c:'SE'});
+      // diagonal caps: fill tiny gaps when only diagonal touches land
+      if(NE===1 && N===0 && E===0) caps.push({x,y,c:'NE'});
+      if(NW===1 && N===0 && Wn===0) caps.push({x,y,c:'NW'});
+      if(SE===1 && S===0 && E===0) caps.push({x,y,c:'SE'});
+      if(SW===1 && S===0 && Wn===0) caps.push({x,y,c:'SW'});
+    }
+  }
+  return { landLayer, edges, corners, caps };
+}
+
+// --- Render ---
+function draw(ctx,grid,coast,opts){
+  const H=grid.length,W=grid[0].length;
+  // camera transform
+  ctx.setTransform(opts.scale,0,0,opts.scale,opts.panX,opts.panY);
+  // clear in world coords
+  ctx.clearRect((-opts.panX)/opts.scale, (-opts.panY)/opts.scale, ctx.canvas.width/opts.scale, ctx.canvas.height/opts.scale);
+  ctx.fillStyle='#0b2a4a'; ctx.fillRect(0,0,W*TS,H*TS);
+  // land
+  ctx.fillStyle='#2fb17a'; for(const {x,y} of coast.landLayer){ ctx.fillRect(x*TS,y*TS,TS,TS); }
+  // edges
+  if(opts.showEdges){ ctx.fillStyle='#1f6feb'; const e=Math.max(2,Math.round(TS*0.28));
+    for(const {x,y,d} of coast.edges){ const px=x*TS,py=y*TS;
+      if(d==='N') ctx.fillRect(px,py,TS,e);
+      if(d==='S') ctx.fillRect(px,py+TS-e,TS,e);
+      if(d==='W') ctx.fillRect(px,py,e,TS);
+      if(d==='E') ctx.fillRect(px+TS-e,py,e,TS);
+    }
+    // diagonal caps to fix empty corners
+    for(const {x,y,c} of coast.caps){ const px=x*TS,py=y*TS;
+      if(c==='NW') ctx.fillRect(px,py,e,e);
+      if(c==='NE') ctx.fillRect(px+TS-e,py,e,e);
+      if(c==='SW') ctx.fillRect(px,py+TS-e,e,e);
+      if(c==='SE') ctx.fillRect(px+TS-e,py+TS-e,e,e);
+    }
+  }
+  // convex corners on WATER tiles (same color as edges)
+  if(opts.showCorners){ ctx.fillStyle='#1f6feb'; const r=Math.max(3,Math.round(TS*0.42));
+    for(const {x,y,c} of coast.corners){ const px=x*TS,py=y*TS; ctx.beginPath();
+      if(c==='NW'){ctx.moveTo(px,py);ctx.arc(px,py,r,0,Math.PI/2,true);} 
+      if(c==='NE'){ctx.moveTo(px+TS,py);ctx.arc(px+TS,py,r,Math.PI,Math.PI/2,true);} 
+      if(c==='SW'){ctx.moveTo(px,py+TS);ctx.arc(px,py+TS,r,0,-Math.PI/2,true);} 
+      if(c==='SE'){ctx.moveTo(px+TS,py+TS);ctx.arc(px+TS,py+TS,r,Math.PI,-Math.PI/2,true);} 
+      ctx.closePath(); ctx.fill(); }
+  }
+  // optional tile IDs for corners (6..9)
+  if(opts.showIds){
+    const idMap={NW:6, NE:7, SW:8, SE:9};
+    ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = '9px monospace';
+    for(const {x,y,c} of coast.corners){
+      ctx.fillText(String(idMap[c]), x*TS+TS/2, y*TS+TS/2);
+    }
+  }
+  // grid
+  if(opts.showGrid){ ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1/opts.scale; ctx.beginPath();
+    for(let x=0;x<=W;x++){ ctx.moveTo(x*TS+.5,0); ctx.lineTo(x*TS+.5,H*TS); } 
+    for(let y=0;y<=H;y++){ ctx.moveTo(0,y*TS+.5); ctx.lineTo(W*TS,y*TS+.5); } 
+    ctx.stroke(); }
+}
+
+
+// --- Draw-mode app ---
+const $ = sel => document.querySelector(sel);
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let grid = makeGrid(parseInt($('#w').value,10), parseInt($('#h').value,10), 0);
+let isDown = false; let paintVal = 1; // will be set on mousedown in auto mode
+// camera state
+let scale = 1; let panX = 0, panY = 0; let isPanning = false; let lastX=0, lastY=0; let spaceDown=false;
+
+function redraw(){ const coast=autotileCoast(grid); draw(ctx,grid,coast,{ showGrid:$('#showGrid').checked, showEdges:$('#showEdges').checked, showCorners:$('#showCorners').checked, showIds:$('#showTileIds')?$('#showTileIds').checked:false, scale, panX, panY }); }
+function resizeAndClear(){ const W=parseInt($('#w').value,10), H=parseInt($('#h').value,10); grid=makeGrid(W,H,0); redraw(); }
+
+function getCell(ev){ const r=canvas.getBoundingClientRect(); const sx=ev.clientX-r.left, sy=ev.clientY-r.top; const wx=(sx - panX)/scale, wy=(sy - panY)/scale; return { x:Math.floor(wx/TS), y:Math.floor(wy/TS) }; }
+function applyAt(x,y){ if(!inBounds(grid,x,y)) return; if(grid[y][x]!==paintVal){ grid[y][x]=paintVal; } }
+
+canvas.addEventListener('mousedown', (e)=>{
+  // middle mouse or space = pan
+  if(e.button===1 || spaceDown){ isPanning=true; lastX=e.clientX; lastY=e.clientY; e.preventDefault(); return; }
+  isDown = true;
+  const {x,y} = getCell(e);
+  const tool = $('#tool').value;
+  if(tool === 'auto'){ paintVal = at(grid,x,y) ? 0 : 1; }
+  else { paintVal = (tool === 'draw') ? 1 : 0; }
+  applyAt(x,y); redraw();
+});
+window.addEventListener('mousemove', (e)=>{
+  if(isPanning){ panX += (e.clientX-lastX); panY += (e.clientY-lastY); lastX=e.clientX; lastY=e.clientY; redraw(); return; }
+  if(!isDown) return; const {x,y}=getCell(e); applyAt(x,y); redraw();
+});
+window.addEventListener('mouseup', ()=>{ isDown=false; isPanning=false; });
+canvas.addEventListener('contextmenu', (e)=>{ e.preventDefault(); });
+// wheel zoom (to cursor)
+canvas.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect(); const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  const wx=(sx - panX)/scale, wy=(sy - panY)/scale;
+  const zoom = Math.exp(-e.deltaY * 0.0015);
+  const newScale = Math.max(0.5, Math.min(6, scale*zoom));
+  panX = sx - wx*newScale; panY = sy - wy*newScale; scale = newScale; redraw();
+}, { passive:false });
+window.addEventListener('keydown', (e)=>{ if(e.code==='Space') spaceDown=true; });
+window.addEventListener('keyup', (e)=>{ if(e.code==='Space') spaceDown=false; });
+
+// Controls
+$('#clear').addEventListener('click', resizeAndClear);
+$('#w').addEventListener('change', resizeAndClear);
+$('#h').addEventListener('change', resizeAndClear);
+$('#showGrid').addEventListener('change', redraw);
+$('#showEdges').addEventListener('change', redraw);
+$('#showCorners').addEventListener('change', redraw);
+
+// --- Tilesheet generation helpers ---
+function tileBase(ctx){ ctx.fillStyle='#0b2a4a'; ctx.fillRect(0,0,TS,TS); }
+function tileLand(ctx){ ctx.fillStyle='#2fb17a'; ctx.fillRect(0,0,TS,TS); }
+function tileEdge(ctx,dir){ const e=Math.max(2,Math.round(TS*0.28)); ctx.fillStyle='#1f6feb';
+  if(dir==='N') ctx.fillRect(0,0,TS,e);
+  if(dir==='S') ctx.fillRect(0,TS-e,TS,e);
+  if(dir==='W') ctx.fillRect(0,0,e,TS);
+  if(dir==='E') ctx.fillRect(TS-e,0,e,TS);
+}
+function tileCorner(ctx,c){ const r=Math.max(3,Math.round(TS*0.42)); ctx.fillStyle='#1f6feb'; ctx.beginPath();
+  if(c==='NW'){ctx.moveTo(0,0);ctx.arc(0,0,r,0,Math.PI/2,true);} 
+  if(c==='NE'){ctx.moveTo(TS,0);ctx.arc(TS,0,r,Math.PI,Math.PI/2,true);} 
+  if(c==='SW'){ctx.moveTo(0,TS);ctx.arc(0,TS,r,0,-Math.PI/2,true);} 
+  if(c==='SE'){ctx.moveTo(TS,TS);ctx.arc(TS,TS,r,Math.PI,-Math.PI/2,true);} 
+  ctx.closePath(); ctx.fill();
+}
+function tileCap(ctx,c){ const e=Math.max(2,Math.round(TS*0.28)); ctx.fillStyle='#1f6feb';
+  if(c==='NW') ctx.fillRect(0,0,e,e);
+  if(c==='NE') ctx.fillRect(TS-e,0,e,e);
+  if(c==='SW') ctx.fillRect(0,TS-e,e,e);
+  if(c==='SE') ctx.fillRect(TS-e,TS-e,e,e);
+}
+
+function buildTilesheet(){
+  const can=document.getElementById('tilesheet'); const t=can.getContext('2d');
+  const cols=8, rows=2; const W=cols*TS, H=rows*TS; can.width=W; can.height=H; t.clearRect(0,0,W,H); t.imageSmoothingEnabled=false;
+  function place(col,row,fn){ t.save(); t.translate(col*TS,row*TS); tileBase(t); fn(t); t.restore(); }
+  // 0 water
+  place(0,0,()=>{});
+  // 1 land
+  place(1,0,tileLand);
+  // 2-5 edges N,E,S,W
+  place(2,0,(c)=>tileEdge(c,'N'));
+  place(3,0,(c)=>tileEdge(c,'E'));
+  place(4,0,(c)=>tileEdge(c,'S'));
+  place(5,0,(c)=>tileEdge(c,'W'));
+  // 6-9 corners NW,NE,SW,SE
+  place(6,0,(c)=>tileCorner(c,'NW'));
+  place(7,0,(c)=>tileCorner(c,'NE'));
+  place(0,1,(c)=>tileCorner(c,'SW'));
+  place(1,1,(c)=>tileCorner(c,'SE'));
+  // 10-13 caps NW,NE,SW,SE
+  place(2,1,(c)=>tileCap(c,'NW'));
+  place(3,1,(c)=>tileCap(c,'NE'));
+  place(4,1,(c)=>tileCap(c,'SW'));
+  place(5,1,(c)=>tileCap(c,'SE'));
+  // grid overlay (preview only)
+  t.strokeStyle='rgba(255,255,255,.08)'; t.lineWidth=1; t.beginPath();
+  for(let x=0;x<=cols;x++){ t.moveTo(x*TS+.5,0); t.lineTo(x*TS+.5,H); }
+  for(let y=0;y<=rows;y++){ t.moveTo(0,y*TS+.5); t.lineTo(W,y*TS+.5); }
+  t.stroke();
+  // optional IDs on corner tiles
+  const showIds = document.getElementById('showTileIds') && document.getElementById('showTileIds').checked;
+  if(showIds){
+    const label = (col,row,id)=>{ t.fillStyle='#fff'; t.font='10px monospace'; t.textAlign='center'; t.textBaseline='middle'; t.fillText(String(id), col*TS+TS/2, row*TS+TS/2); };
+    label(6,0,6); label(7,0,7); label(0,1,8); label(1,1,9);
+  }
+}
+
+function exportTilesheet(){ const can=document.getElementById('tilesheet'); const a=document.createElement('a'); a.href=can.toDataURL('image/png'); a.download='coast_tilesheet_16x16.png'; document.body.appendChild(a); a.click(); a.remove(); }
+
+document.getElementById('exportTiles').addEventListener('click', exportTilesheet);
+const showIdsEl=document.getElementById('showTileIds'); if(showIdsEl){ showIdsEl.addEventListener('change', ()=>{ buildTilesheet(); redraw(); }); }
+
+// init
+redraw();
+buildTilesheet();
+</script>
+</body>
+</html>
