@@ -319,9 +319,17 @@ function initializeRngStreams(baseSeed: number) {
 
 // ===== World Generation =====
 // Create Mode: sculpt islands directly. Start with all water; click selects a tile; +/- grows/erodes land.
-let CREATE_MODE = true;
+// Default OFF to restore RNG-based layered world generation.
+let CREATE_MODE = false;
 // Legacy simple toggle kept for reference; when CREATE_MODE is enabled, this is implied
-let SIMPLE_ISLAND_ONLY = true;
+let SIMPLE_ISLAND_ONLY = false;
+
+// Generation parameters (fractions 0..1)
+let GEN_PARAMS = {
+  forest: 0.35,   // ~35% of land becomes forest
+  mountains: 0.12, // ~12% of land becomes mountains (clustered)
+  villages: 0.08, // ~8% of land becomes villages
+};
 
 async function generate(
   seed = Date.now(),
@@ -348,75 +356,116 @@ async function generate(
     actions: 3,
     sel: null,
   });
-  // 1) Base map: in Create Mode start with all water, else generate an island
+  // 1) Base map: initialize water
   state.map = Array(state.size.w * state.size.h)
     .fill(0)
     .map(() => cell(T.WATER));
   const cx = (state.size.w - 1) / 2,
     cy = (state.size.h - 1) / 2,
     maxR = Math.hypot(cx, cy);
-  if (!CREATE_MODE) {
+
+  if (CREATE_MODE) {
+    // Reveal all for editing
+    each((x, y, c: any) => { c.disc = true; c.h = 0; });
+  } else {
+    // Layer 1: island shape from ocean (radial falloff + noise)
     each((x, y, c: any) => {
       const radial = 0.6 - Math.hypot(x - cx, y - cy) / maxR;
       const noise = worldGenRng!() * 0.35 - 0.15;
       c.type = radial + noise > 0 ? T.GRASS : T.WATER;
     });
-  } else {
-    // Reveal all for editing
-    each((x, y, c: any) => { c.disc = true; c.h = 0; });
-  }
 
-  // 2) Optionally skip extra biomes for a clean land/water preview
-  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
-    const L: Array<{ x: number; y: number }> = [];
-    const n = Math.max(4, Math.floor((state.size.w * state.size.h) / 12));
-    for (let i = 0; i < n; i++) {
-      const x = 1 + Math.floor(worldGenRng!() * (state.size.w - 2));
-      const y = 1 + Math.floor(worldGenRng!() * (state.size.h - 2));
-      if ((state.map[idx(x, y)] as any).type !== T.WATER) L.push({ x, y });
-    }
-    each((x, y, c: any) => {
-      if (c.type === T.WATER) return; // only modify land
-      let k = 0;
-      for (const m of L) if (Math.hypot(m.x - x, m.y - y) <= 2.1) k++;
-      c.type = k >= 4 ? T.MOUNTAIN : k === 3 ? T.HILL : k === 2 ? T.FOREST : T.GRASS;
-    });
-  }
+    // Collect land tiles
+    const land: Array<{x:number,y:number,i:number}> = [];
+    each((x, y, c: any) => { if (rt(c) !== T.WATER) land.push({x,y,i:idx(x,y)}); });
 
-  // 3) Optional bays: carve back to water rarely along land hotspots
-  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
-    // 3) Optional bays: carve back to water rarely along land hotspots
-    const L: Array<{ x: number; y: number }> = [];
-    each((x, y, c: any) => { if (c.type !== T.WATER) L.push({ x, y }); });
-    for (const m of L) {
-      if (worldGenRng!() < 0.25) {
-        (state.map[idx(m.x, m.y)] as any).type = T.WATER;
+    // Helper: interior score (fewer adjacent water tiles preferred)
+    const coastiness = (x:number, y:number) => {
+      let w = 0;
+      for (const d of DIRS) {
+        const nx=x+d[0], ny=y+d[1];
+        if (!inBounds(nx,ny)) { w += 1; continue; }
+        const n = state.map[idx(nx,ny)] as any;
+        if (!n || rt(n) === T.WATER) w += 1;
+      }
+      return w; // 0 best (interior), 4 worst (isolated/coast)
+    };
+
+    // Layer 2: place starter hut near center on grass
+    const grassTiles = land.filter(p => (state.map[p.i] as any).type === T.GRASS);
+    const centerSorted = [...grassTiles].sort((a,b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+    const start = centerSorted[0] || { x: Math.floor(cx), y: Math.floor(cy), i: idx(Math.floor(cx), Math.floor(cy)) };
+    (state.map[start.i] as any).type = T.HUT;
+
+    // Layer 3a: mountains (clustered) based on density
+    const targetM = Math.max(0, Math.floor(land.length * Math.max(0, Math.min(1, GEN_PARAMS.mountains))));
+    const interiorSorted = [...land].sort((a,b) => coastiness(a.x,a.y) - coastiness(b.x,b.y));
+    let placedM = 0;
+    const markMountain = (x:number,y:number) => { const c = state.map[idx(x,y)] as any; if (c && rt(c) !== T.WATER && c.type !== T.HUT && c.type !== T.MOUNTAIN) { c.type = T.MOUNTAIN; placedM++; return true; } return false; };
+    let cursor = 0;
+    const tried = new Set<number>();
+    while (placedM < targetM && cursor < interiorSorted.length * 3) {
+      // Bias toward interior: pick among the best 60%
+      const span = Math.max(1, Math.floor(interiorSorted.length * 0.6));
+      const pick = interiorSorted[Math.floor(worldGenRng!() * span)]!;
+      cursor++;
+      if (tried.has(pick.i)) continue; tried.add(pick.i);
+      if (!markMountain(pick.x, pick.y)) continue;
+      // Small cluster growth
+      const q: Array<[number,number]> = [[pick.x, pick.y]];
+      let budget = 4; // cap cluster size
+      while (q.length && placedM < targetM && budget-- > 0) {
+        const [cx1, cy1] = q.shift()!;
         for (const d of DIRS) {
-          const nx = m.x + d[0], ny = m.y + d[1];
-          if (inBounds(nx, ny) && worldGenRng!() < 0.5)
-            (state.map[idx(nx, ny)] as any).type = T.WATER;
+          if (worldGenRng!() < 0.35) {
+            const nx = cx1 + d[0], ny = cy1 + d[1];
+            if (!inBounds(nx, ny)) continue;
+            const ok = markMountain(nx, ny);
+            if (ok) q.push([nx, ny]);
+            if (placedM >= targetM) break;
+          }
         }
       }
     }
-  }
 
-  // 4) Optionally place starter structures; skip for simple preview
-  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
-    const gs: Array<{ x: number; y: number }> = [];
-    each((x, y, c: any) => { if (c.type === T.GRASS) gs.push({ x, y }); });
-    const s = gs.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0] || { x: Math.floor(cx), y: Math.floor(cy) };
-    (state.map[idx(s.x, s.y)] as any).type = T.HUT;
-    ensureStartResources(s.x, s.y);
-    reveal(s.x, s.y, 1);
-    let towns = 0;
-    each((x, y, c: any) => {
-      if (towns < 2 && (c.type === T.GRASS || c.type === T.FOREST) && (x + y) % 7 === 0 && worldGenRng!() < 0.25) {
-        c.type = T.TOWN;
-        towns++;
+    // Layer 3b: forests based on density (don’t overwrite hut or mountains)
+    const targetF = Math.max(0, Math.floor(land.length * Math.max(0, Math.min(1, GEN_PARAMS.forest))));
+    const candidatesF = land
+      .filter(p => { const c = state.map[p.i] as any; return c.type === T.GRASS; })
+      .sort(() => (worldGenRng!() < 0.5 ? -1 : 1));
+    for (let i = 0; i < candidatesF.length && i < targetF; i++) {
+      const pick = candidatesF[i];
+      if (!pick) break;
+      (state.map[pick.i] as any).type = T.FOREST;
+    }
+
+    // Layer 3c: villages (towns) based on density; place on grass or forest, avoid adjacency with other towns
+    const targetV = Math.max(0, Math.floor(land.length * Math.max(0, Math.min(1, GEN_PARAMS.villages))));
+    let placedV = 0;
+    const canPlaceTown = (x:number,y:number) => {
+      for (const d of DIRS) {
+        const nx=x+d[0], ny=y+d[1];
+        if (!inBounds(nx,ny)) continue;
+        const n = state.map[idx(nx,ny)] as any;
+        if (n && n.type === T.TOWN) return false;
       }
-    });
-  } else {
-    // In create mode, no starter structures; keep fully revealed water
+      return true;
+    };
+    const candV = land.filter(p => { const c = state.map[p.i] as any; return (c.type === T.GRASS || c.type === T.FOREST) && c.type !== T.HUT; })
+                      .sort(() => (worldGenRng!() < 0.5 ? -1 : 1));
+    for (const p of candV) {
+      if (placedV >= targetV) break;
+      if (!canPlaceTown(p.x, p.y)) continue;
+      const c = state.map[p.i] as any;
+      if (c.type === T.GRASS || c.type === T.FOREST) {
+        c.type = T.TOWN;
+        placedV++;
+      }
+    }
+
+    // Ensure starter resources adjacent to hut and reveal vicinity
+    ensureStartResources(start.x, start.y);
+    reveal(start.x, start.y, 1);
   }
   // Compute initial heights based on terrain
   computeHeightMap();
@@ -1469,6 +1518,18 @@ function showStart() {
       '<div class="section"><label>Seed (optional)' +
       '<input id="sd" type="number" placeholder="random" style="width:100%" />' +
       "</label></div>" +
+    '<div class="section">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><label>Forests</label><b id="forestOut">' +
+    Math.round(GEN_PARAMS.forest*100) + '%</b></div>' +
+    '<input id="forest" type="range" min="0" max="100" step="5" value="' + Math.round(GEN_PARAMS.forest*100) + '" />' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 6px"><label>Mountains</label><b id="mountOut">' +
+    Math.round(GEN_PARAMS.mountains*100) + '%</b></div>' +
+    '<input id="mount" type="range" min="0" max="50" step="5" value="' + Math.round(GEN_PARAMS.mountains*100) + '" />' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 6px"><label>Villages</label><b id="villOut">' +
+    Math.round(GEN_PARAMS.villages*100) + '%</b></div>' +
+    '<input id="vill" type="range" min="0" max="30" step="5" value="' + Math.round(GEN_PARAMS.villages*100) + '" />' +
+    '<div class="hint" style="margin-top:6px">Forests ~1 level above grass; Mountains ~2+. Ranges raise nearby land. Values apply per new map.</div>' +
+    "</div>" +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
       '<button class="btn" id="cancelNew">Cancel</button>' +
       '<button class="btn primary" id="startNew">Start</button>' +
@@ -1484,9 +1545,24 @@ function showStart() {
             (box.querySelector("#sd") as HTMLInputElement).value,
             10
           );
+      // Read sliders and update defaults for this run
+      const fPct = parseInt((box.querySelector('#forest') as HTMLInputElement).value, 10) || 0;
+      const mPct = parseInt((box.querySelector('#mount') as HTMLInputElement).value, 10) || 0;
+      const vPct = parseInt((box.querySelector('#vill') as HTMLInputElement).value, 10) || 0;
+      GEN_PARAMS = { forest: Math.max(0, Math.min(1, fPct/100)), mountains: Math.max(0, Math.min(1, mPct/100)), villages: Math.max(0, Math.min(1, vPct/100)) };
           await generate(Number.isFinite(sd) ? sd : Date.now(), size);
           wrap.remove();
         };
+    // Live update labels
+    const forest = box.querySelector('#forest') as HTMLInputElement;
+    const mount = box.querySelector('#mount') as HTMLInputElement;
+    const vill = box.querySelector('#vill') as HTMLInputElement;
+    const forestOut = box.querySelector('#forestOut') as HTMLElement;
+    const mountOut = box.querySelector('#mountOut') as HTMLElement;
+    const villOut = box.querySelector('#villOut') as HTMLElement;
+    forest?.addEventListener('input', () => forestOut.textContent = forest.value + '%');
+    mount?.addEventListener('input', () => mountOut.textContent = mount.value + '%');
+    vill?.addEventListener('input', () => villOut.textContent = vill.value + '%');
     }
   );
 }
