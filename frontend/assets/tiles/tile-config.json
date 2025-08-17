@@ -16,21 +16,117 @@
             "tileType": "terrain",
             "description": "Charred ground from fire damage - placeholder: solid black"
         },
-        "water": {
-            "uid": "tile_water",
-            "path": "/assets/auto-tiles-water.png",
+        "coast_water": {
+            "uid": "tile_coast_water",
+            "path": "/assets/coast_tilesheet.png",
             "atlasColumn": 0,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Deep ocean water - from auto-tiles-water.png tile id 0"
+            "description": "Coast tilesheet: base water (tile id 0)"
         },
-        "coast": {
-            "uid": "tile_coast",
-            "path": "/assets/auto-tiles-water.png",
+        "coast_land": {
+            "uid": "tile_coast_land",
+            "path": "/assets/coast_tilesheet.png",
             "atlasColumn": 1,
             "atlasRow": 0,
             "tileType": "terrain",
-            "description": "Shallow coastal water for dock placement - from auto-tiles-water.png tile id 1"
+            "description": "Coast tilesheet: base land (tile id 1)"
+        },
+        "coast_edge_n": {
+            "uid": "tile_coast_edge_n",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 2,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: edge north (tile id 2)"
+        },
+        "coast_edge_e": {
+            "uid": "tile_coast_edge_e",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 3,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: edge east (tile id 3)"
+        },
+        "coast_edge_s": {
+            "uid": "tile_coast_edge_s",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 4,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: edge south (tile id 4)"
+        },
+        "coast_edge_w": {
+            "uid": "tile_coast_edge_w",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 5,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: edge west (tile id 5)"
+        },
+        "coast_corner_nw": {
+            "uid": "tile_coast_corner_nw",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 6,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: corner NW (tile id 6)"
+        },
+        "coast_corner_ne": {
+            "uid": "tile_coast_corner_ne",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 7,
+            "atlasRow": 0,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: corner NE (tile id 7)"
+        },
+        "coast_corner_sw": {
+            "uid": "tile_coast_corner_sw",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 0,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: corner SW (tile id 8)"
+        },
+        "coast_corner_se": {
+            "uid": "tile_coast_corner_se",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 1,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: corner SE (tile id 9)"
+        },
+        "coast_cap_nw": {
+            "uid": "tile_coast_cap_nw",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 2,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: cap NW (tile id 10)"
+        },
+        "coast_cap_ne": {
+            "uid": "tile_coast_cap_ne",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 3,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: cap NE (tile id 11)"
+        },
+        "coast_cap_sw": {
+            "uid": "tile_coast_cap_sw",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 4,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: cap SW (tile id 12)"
+        },
+        "coast_cap_se": {
+            "uid": "tile_coast_cap_se",
+            "path": "/assets/coast_tilesheet.png",
+            "atlasColumn": 5,
+            "atlasRow": 1,
+            "tileType": "terrain",
+            "description": "Coast tilesheet: cap SE (tile id 13)"
         },
         "grass": {
             "uid": "tile_grass",

@@ -18,6 +18,7 @@
 // - +/- keys: Zoom in/out (disabled; reserved for height debug)
 
 import { tileAtlas } from "../tileAtlas";
+import { getCoastOverlaysAt } from "../autotile";
 
 // Declare global THREE from CDN
 declare global {
@@ -209,25 +210,81 @@ class ThreeRenderer implements RendererInterface {
     isDiscovered = true,
     isSelected = false,
     label = "",
-    hasSynergy = false
+    hasSynergy = false,
+    x?: number,
+    y?: number
   ): any {
     const K = (window as any).KBTS;
     const { T, C, LABEL } = K;
     const THREE = window.THREE;
 
-    // Determine the actual tile type for atlas lookup
-    let atlasType = tileType;
-    if (tileType === T.WATER) {
-      atlasType = isCoast ? "coast" : "water";
-    }
-
     // Try to get texture from atlas first
     if (tileAtlas.isLoaded()) {
-      const useLetters = true; // Use letter layer during development
-      // Water tiles should never have fog - always use row 2 (non-fogged)
+      const useLetters = true;
       const useFog = tileType === T.WATER ? false : !isDiscovered;
 
-      const texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+      let texture: any = null;
+      if (tileType === T.WATER && x != null && y != null) {
+        // Procedural water tile identical to the 2D renderer and the HTML demo
+        const can = document.createElement("canvas");
+        can.width = can.height = 16; // 16x16 tiles
+        const t2d = can.getContext("2d")!;
+        // Base water
+        t2d.fillStyle = "#0b2a4a";
+        t2d.fillRect(0, 0, 16, 16);
+        // Overlays from shared autotile logic
+        const K = (window as any).KBTS;
+        const q = {
+          inBounds: (xx: number, yy: number) => K.inBounds(xx, yy),
+          isLand: (xx: number, yy: number) => {
+            if (!K.inBounds(xx, yy)) return false;
+            const cell = K.state.map[K.idx(xx, yy)] as any;
+            const tt = cell?.upg ? cell.upg.to : cell?.type;
+            return tt !== K.T.WATER;
+          }
+        };
+        const { edges, corners, caps } = getCoastOverlaysAt(q as any, x, y);
+        const e = Math.max(2, Math.round(16 * 0.28));
+        const r = Math.max(3, Math.round(16 * 0.42));
+        t2d.fillStyle = "#1f6feb";
+        // edges
+        for (const d of edges) {
+          if (d === 'N') t2d.fillRect(0, 0, 16, e);
+          if (d === 'S') t2d.fillRect(0, 16 - e, 16, e);
+          if (d === 'W') t2d.fillRect(0, 0, e, 16);
+          if (d === 'E') t2d.fillRect(16 - e, 0, e, 16);
+        }
+        // caps
+        for (const c of caps) {
+          if (c === 'NW') t2d.fillRect(0, 0, e, e);
+          if (c === 'NE') t2d.fillRect(16 - e, 0, e, e);
+          if (c === 'SW') t2d.fillRect(0, 16 - e, e, e);
+          if (c === 'SE') t2d.fillRect(16 - e, 16 - e, e, e);
+        }
+        // convex corners
+        for (const c of corners) {
+          t2d.beginPath();
+          if (c === 'NW') { t2d.moveTo(0, 0); t2d.arc(0, 0, r, 0, Math.PI/2, true); }
+          if (c === 'NE') { t2d.moveTo(16, 0); t2d.arc(16, 0, r, Math.PI, Math.PI/2, true); }
+          if (c === 'SW') { t2d.moveTo(0, 16); t2d.arc(0, 16, r, 0, -Math.PI/2, true); }
+          if (c === 'SE') { t2d.moveTo(16, 16); t2d.arc(16, 16, r, Math.PI, -Math.PI/2, true); }
+          t2d.closePath();
+          t2d.fill();
+        }
+        texture = new THREE.CanvasTexture(can);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+      }
+      if (!texture) {
+        // Land and fallback
+        let atlasType = tileType;
+        if (tileType === T.WATER) atlasType = 'water';
+        // Use coast_land as generic base for land if no biome art specified
+        if (tileType !== T.WATER && (tileType === T.GRASS || tileType === T.FOREST || tileType === T.MOUNTAIN || tileType === T.HILL)) {
+          atlasType = 'coast_land';
+        }
+        texture = tileAtlas.getThreeTexture(atlasType, useLetters, useFog);
+      }
       if (texture) {
         // If we have atlas texture, we might still need to add overlays
         if (isSelected || hasSynergy) {
@@ -237,11 +294,21 @@ class ThreeRenderer implements RendererInterface {
           const ctx = canvas.getContext("2d")!;
 
           // Draw the base tile
-          const baseCanvas = tileAtlas.getTileCanvas(
-            atlasType,
-            useLetters,
-            useFog
-          );
+          let baseCanvas: HTMLCanvasElement | null = null;
+          if (tileType === T.WATER && x != null && y != null) {
+            const K = (window as any).KBTS;
+            const q = {
+              inBounds: (xx: number, yy: number) => K.inBounds(xx, yy),
+              isLand: (xx: number, yy: number) => {
+                if (!K.inBounds(xx, yy)) return false;
+                const tt = (K.state.map[K.idx(xx, yy)] as any)?.upg ? (K.state.map[K.idx(xx, yy)] as any).upg.to : (K.state.map[K.idx(xx, yy)] as any).type;
+                return tt !== K.T.WATER;
+              }
+            };
+            baseCanvas = tileAtlas.composeCoastCanvas(x, y, q);
+          } else {
+            baseCanvas = tileAtlas.getTileCanvas(tileType === T.WATER ? 'water' : (tileType === T.GRASS || tileType === T.FOREST || tileType === T.MOUNTAIN || tileType === T.HILL ? 'coast_land' : tileType), useLetters, useFog);
+          }
           if (baseCanvas) {
             ctx.drawImage(baseCanvas, 0, 0);
           }
@@ -271,7 +338,7 @@ class ThreeRenderer implements RendererInterface {
           return compositeTexture;
         }
 
-        return texture;
+  return texture;
       }
     }
 
@@ -441,7 +508,9 @@ class ThreeRenderer implements RendererInterface {
       if (K.inBounds(x, y)) {
         K.state.sel = K.idx(x, y);
         K.draw(); // This will update both renderers
-        K.openPanel?.(x, y);
+        if (!K.getCreateMode || !K.getCreateMode()) {
+          K.openPanel?.(x, y);
+        }
       }
     }
   }
@@ -1397,7 +1466,9 @@ class ThreeRenderer implements RendererInterface {
           isDiscoveredForTexture,
           isSelected,
           label,
-          hasSynergy
+          hasSynergy,
+          x,
+          y
         );
 
         // Create mesh

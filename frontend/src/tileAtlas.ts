@@ -2,6 +2,7 @@
 // Now uses preloaded individual textures combined into runtime atlas
 
 import { tileAtlasPreloader, type AtlasPosition } from './tileAtlasPreloader';
+import { getCoastOverlaysAt, coastOverlayKey } from './autotile';
 
 export interface TilePosition {
   x: number;
@@ -17,8 +18,24 @@ export class TileAtlas {
   // Updated tile mapping to use the new system
   private tileMapping: Record<string, string> = {
     'black': 'burnt',
-    'water': 'water',
-    'coast': 'coast', 
+  // Water now comes from the coast tilesheet base water tile
+  'water': 'coast_water',
+  'coast': 'coast_water', 
+  // Coast tilesheet direct keys (identity mapping)
+  'coast_water': 'coast_water',
+  'coast_land': 'coast_land',
+  'coast_edge_n': 'coast_edge_n',
+  'coast_edge_e': 'coast_edge_e',
+  'coast_edge_s': 'coast_edge_s',
+  'coast_edge_w': 'coast_edge_w',
+  'coast_corner_nw': 'coast_corner_nw',
+  'coast_corner_ne': 'coast_corner_ne',
+  'coast_corner_sw': 'coast_corner_sw',
+  'coast_corner_se': 'coast_corner_se',
+  'coast_cap_nw': 'coast_cap_nw',
+  'coast_cap_ne': 'coast_cap_ne',
+  'coast_cap_sw': 'coast_cap_sw',
+  'coast_cap_se': 'coast_cap_se',
     'grass': 'grass',
     'forest': 'forest',
     'mountain': 'mountain',
@@ -30,7 +47,7 @@ export class TileAtlas {
     'castle': 'building',
     'farm': 'farm',
     'mine': 'mountain', // Mines use mountain base + overlay
-    'dock': 'coast', // Docks use coast base + overlay
+  'dock': 'coast_water', // Docks use water base + overlay
     'town': 'building',
     'burnt': 'burnt',
     'rubble': 'rubble'
@@ -67,6 +84,38 @@ export class TileAtlas {
     }
     
     return canvas;
+  }
+
+  // Composite coast water with overlay pieces for a given cell, using provided land query
+  composeCoastCanvas(x: number, y: number, q: { inBounds: (x:number,y:number)=>boolean; isLand: (x:number,y:number)=>boolean }): HTMLCanvasElement | null {
+    if (!this.loaded || !this.atlas) return null;
+    const base = tileAtlasPreloader.getTileCanvas('coast_water');
+    if (!base) return null;
+    const out = document.createElement('canvas');
+    out.width = base.width; out.height = base.height;
+    const ctx = out.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(base, 0, 0);
+    const { edges, corners, caps } = getCoastOverlaysAt(q, x, y);
+    // draw edges
+    for (const d of edges) {
+      const key = coastOverlayKey('edge', d);
+      const tile = tileAtlasPreloader.getTileCanvas(key);
+      if (tile) ctx.drawImage(tile, 0, 0);
+    }
+    // draw caps first (small squares)
+    for (const c of caps) {
+      const key = coastOverlayKey('cap', c);
+      const tile = tileAtlasPreloader.getTileCanvas(key);
+      if (tile) ctx.drawImage(tile, 0, 0);
+    }
+    // draw convex corners on top
+    for (const c of corners) {
+      const key = coastOverlayKey('corner', c);
+      const tile = tileAtlasPreloader.getTileCanvas(key);
+      if (tile) ctx.drawImage(tile, 0, 0);
+    }
+    return out;
   }
 
   // Apply fog of war shading to a canvas

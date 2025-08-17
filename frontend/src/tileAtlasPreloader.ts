@@ -82,41 +82,57 @@ export class TileAtlasPreloader {
     this.atlas.height = atlasSize;
     const ctx = this.atlas.getContext('2d')!;
 
-    // Load all unique source images first
+    // Load all unique source images first (except coast tilesheet which we will generate procedurally)
     const uniquePaths = new Set<string>();
-    Object.values(tiles).forEach(tile => uniquePaths.add(tile.path));
-    
-    await Promise.all(
-      Array.from(uniquePaths).map(path => this.loadImage(path))
-    );
+    Object.values(tiles).forEach(tile => {
+      if (!tile.path.includes('/assets/coast_tilesheet.png')) uniquePaths.add(tile.path);
+    });
+    await Promise.all(Array.from(uniquePaths).map(path => this.loadImage(path)));
 
-    // Build atlas from tiles
+    // Build atlas from tiles with simple packing to avoid destination overlaps
+    // We allocate destination slots sequentially across the atlas grid
+    const cols = this.config.metadata.columns;
+    const rows = this.config.metadata.rows;
+    const maxSlots = cols * rows;
+    let slot = 0;
+
     Object.entries(tiles).forEach(([key, config]) => {
-      const sourceImage = this.sourceImages.get(config.path)!;
-      
-      // Calculate source position in the source image
-      const sourceX = config.atlasColumn * tileSize;
-      const sourceY = (config.atlasRow || 0) * tileSize;
-      
-      // For now, use the same position in the output atlas
-      // Later we can rearrange tiles as needed
-      const destX = config.atlasColumn * tileSize;
-      const destY = (config.atlasRow || 0) * tileSize;
-      
-      // Draw tile from source to atlas
-      ctx.drawImage(
-        sourceImage,
-        sourceX, sourceY, tileSize, tileSize, // source rect
-        destX, destY, tileSize, tileSize       // dest rect
-      );
-      
-      // Store position mapping
+      if (slot >= maxSlots) {
+        console.warn(`Atlas capacity exceeded while packing tile '${key}'. Consider increasing atlas size/rows/columns.`);
+        return;
+      }
+
+      // Compute a unique destination slot
+      const destCol = slot % cols;
+      const destRow = Math.floor(slot / cols);
+      const destX = destCol * tileSize;
+      const destY = destRow * tileSize;
+
+      // Coast tiles: procedurally generate to ensure 1:1 with HTML demo
+      if (config.path.includes('/assets/coast_tilesheet.png')) {
+        const srcCanvas = this.generateCoastTile(config.atlasColumn, config.atlasRow || 0, tileSize);
+        ctx.drawImage(srcCanvas, 0, 0, tileSize, tileSize, destX, destY, tileSize, tileSize);
+      } else {
+        // Regular tiles from images
+        const sourceImage = this.sourceImages.get(config.path)!;
+        const sourceX = config.atlasColumn * tileSize;
+        const sourceY = (config.atlasRow || 0) * tileSize;
+        ctx.drawImage(
+          sourceImage,
+          sourceX, sourceY, tileSize, tileSize,
+          destX, destY, tileSize, tileSize
+        );
+      }
+
+      // Store position mapping for this tile key
       this.tileMap.set(key, {
         x: destX,
-        y: destY, 
+        y: destY,
         width: tileSize,
-        height: tileSize
+        height: tileSize,
       });
+
+      slot++;
     });
 
     // Load overlay images separately (for future use)
@@ -141,6 +157,50 @@ export class TileAtlasPreloader {
     this.loaded = true;
     console.log(`Tile atlas loaded: ${this.tileMap.size} tiles, ${this.overlayMap.size} overlays`);
     return this.atlas;
+  }
+
+  // Procedural coast tiles identical to auto-tile-test.html
+  private generateCoastTile(col: number, row: number, size: number): HTMLCanvasElement {
+    const can = document.createElement('canvas');
+    can.width = can.height = size;
+    const t = can.getContext('2d')!;
+    const TS = size;
+    const water = '#0b2a4a';
+    const land = '#2fb17a';
+    const edge = '#1f6feb';
+    const e = Math.max(2, Math.round(TS * 0.28));
+    const r = Math.max(3, Math.round(TS * 0.42));
+
+    // Helpers
+    const tileBase = () => { t.fillStyle = water; t.fillRect(0, 0, TS, TS); };
+    const tileLand = () => { t.fillStyle = land; t.fillRect(0, 0, TS, TS); };
+    const tileEdge = (dir: 'N'|'E'|'S'|'W') => { t.fillStyle = edge;
+      if(dir==='N') t.fillRect(0,0,TS,e);
+      if(dir==='S') t.fillRect(0,TS-e,TS,e);
+      if(dir==='W') t.fillRect(0,0,e,TS);
+      if(dir==='E') t.fillRect(TS-e,0,e,TS);
+    };
+    const tileCorner = (c: 'NW'|'NE'|'SW'|'SE') => { t.fillStyle = edge; t.beginPath();
+      if(c==='NW'){ t.moveTo(0,0); t.arc(0,0,r,0,Math.PI/2,true); }
+      if(c==='NE'){ t.moveTo(TS,0); t.arc(TS,0,r,Math.PI,Math.PI/2,true); }
+      if(c==='SW'){ t.moveTo(0,TS); t.arc(0,TS,r,0,-Math.PI/2,true); }
+      if(c==='SE'){ t.moveTo(TS,TS); t.arc(TS,TS,r,Math.PI,-Math.PI/2,true); }
+      t.closePath(); t.fill(); };
+    const tileCap = (c: 'NW'|'NE'|'SW'|'SE') => { t.fillStyle = edge;
+      if(c==='NW') t.fillRect(0,0,e,e);
+      if(c==='NE') t.fillRect(TS-e,0,e,e);
+      if(c==='SW') t.fillRect(0,TS-e,e,e);
+      if(c==='SE') t.fillRect(TS-e,TS-e,e,e);
+    };
+
+    tileBase();
+    const id = row * 8 + col;
+    if (id === 1) { tileLand(); return can; }
+    if (id >= 2 && id <= 5) { tileEdge(['N','E','S','W'][id-2] as any); return can; }
+    if (id >= 6 && id <= 9) { tileCorner(['NW','NE','SW','SE'][id-6] as any); return can; }
+    if (id >= 10 && id <= 13) { tileCap(['NW','NE','SW','SE'][id-10] as any); return can; }
+    // id 0 water already drawn
+    return can;
   }
 
   getTilePosition(tileKey: string): AtlasPosition | null {

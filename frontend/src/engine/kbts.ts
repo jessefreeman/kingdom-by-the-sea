@@ -2,6 +2,7 @@
 // Port of the JS game core, exposed on window for renderer/tests.
 
 import type { Cell, State, UpgradeSpec } from "../types";
+import { getCoastOverlaysAt } from "../autotile";
 
 // ===== DOM helpers =====
 const $ = (id: string) => document.getElementById(id)!;
@@ -317,6 +318,11 @@ function initializeRngStreams(baseSeed: number) {
 }
 
 // ===== World Generation =====
+// Create Mode: sculpt islands directly. Start with all water; click selects a tile; +/- grows/erodes land.
+let CREATE_MODE = true;
+// Legacy simple toggle kept for reference; when CREATE_MODE is enabled, this is implied
+let SIMPLE_ISLAND_ONLY = true;
+
 async function generate(
   seed = Date.now(),
   size: "small" | "medium" | "large" = "medium"
@@ -342,63 +348,76 @@ async function generate(
     actions: 3,
     sel: null,
   });
+  // 1) Base map: in Create Mode start with all water, else generate an island
   state.map = Array(state.size.w * state.size.h)
     .fill(0)
     .map(() => cell(T.WATER));
   const cx = (state.size.w - 1) / 2,
     cy = (state.size.h - 1) / 2,
     maxR = Math.hypot(cx, cy);
-  each((x, y, c: any) => {
-    const v = 0.6 - Math.hypot(x - cx, y - cy) / maxR + (worldGenRng!() * 0.35 - 0.15);
-    c.type = v > 0 ? T.GRASS : T.WATER;
-  });
-  const L: Array<{ x: number; y: number }> = [];
-  const n = Math.max(4, Math.floor((state.size.w * state.size.h) / 12));
-  for (let i = 0; i < n; i++) {
-    const x = 1 + Math.floor(worldGenRng!() * (state.size.w - 2)),
-      y = 1 + Math.floor(worldGenRng!() * (state.size.h - 2));
-    if ((state.map[idx(x, y)] as any).type !== T.WATER) L.push({ x, y });
+  if (!CREATE_MODE) {
+    each((x, y, c: any) => {
+      const radial = 0.6 - Math.hypot(x - cx, y - cy) / maxR;
+      const noise = worldGenRng!() * 0.35 - 0.15;
+      c.type = radial + noise > 0 ? T.GRASS : T.WATER;
+    });
+  } else {
+    // Reveal all for editing
+    each((x, y, c: any) => { c.disc = true; c.h = 0; });
   }
-  each((x, y, c: any) => {
-    if (c.type === T.WATER) return;
-    let k = 0;
-    for (const m of L) if (Math.hypot(m.x - x, m.y - y) <= 2.1) k++;
-    c.type =
-      k >= 4 ? T.MOUNTAIN : k === 3 ? T.HILL : k === 2 ? T.FOREST : T.GRASS;
-  });
-  for (const m of L) {
-    if (worldGenRng!() < 0.25) {
-      (state.map[idx(m.x, m.y)] as any).type = T.WATER;
-      for (const d of DIRS) {
-        const nx = m.x + d[0],
-          ny = m.y + d[1];
-        if (inBounds(nx, ny) && worldGenRng!() < 0.5)
-          (state.map[idx(nx, ny)] as any).type = T.WATER;
+
+  // 2) Optionally skip extra biomes for a clean land/water preview
+  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
+    const L: Array<{ x: number; y: number }> = [];
+    const n = Math.max(4, Math.floor((state.size.w * state.size.h) / 12));
+    for (let i = 0; i < n; i++) {
+      const x = 1 + Math.floor(worldGenRng!() * (state.size.w - 2));
+      const y = 1 + Math.floor(worldGenRng!() * (state.size.h - 2));
+      if ((state.map[idx(x, y)] as any).type !== T.WATER) L.push({ x, y });
+    }
+    each((x, y, c: any) => {
+      if (c.type === T.WATER) return; // only modify land
+      let k = 0;
+      for (const m of L) if (Math.hypot(m.x - x, m.y - y) <= 2.1) k++;
+      c.type = k >= 4 ? T.MOUNTAIN : k === 3 ? T.HILL : k === 2 ? T.FOREST : T.GRASS;
+    });
+  }
+
+  // 3) Optional bays: carve back to water rarely along land hotspots
+  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
+    // 3) Optional bays: carve back to water rarely along land hotspots
+    const L: Array<{ x: number; y: number }> = [];
+    each((x, y, c: any) => { if (c.type !== T.WATER) L.push({ x, y }); });
+    for (const m of L) {
+      if (worldGenRng!() < 0.25) {
+        (state.map[idx(m.x, m.y)] as any).type = T.WATER;
+        for (const d of DIRS) {
+          const nx = m.x + d[0], ny = m.y + d[1];
+          if (inBounds(nx, ny) && worldGenRng!() < 0.5)
+            (state.map[idx(nx, ny)] as any).type = T.WATER;
+        }
       }
     }
   }
-  const gs: Array<{ x: number; y: number }> = [];
-  each((x, y, c: any) => {
-    if (c.type === T.GRASS) gs.push({ x, y });
-  });
-  const s = gs.sort(
-    (a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)
-  )[0] || { x: Math.floor(cx), y: Math.floor(cy) };
-  (state.map[idx(s.x, s.y)] as any).type = T.HUT;
-  ensureStartResources(s.x, s.y);
-  reveal(s.x, s.y, 1);
-  let towns = 0;
-  each((x, y, c: any) => {
-    if (
-      towns < 2 &&
-      (c.type === T.GRASS || c.type === T.FOREST) &&
-      (x + y) % 7 === 0 &&
-      worldGenRng!() < 0.25
-    ) {
-      c.type = T.TOWN;
-      towns++;
-    }
-  });
+
+  // 4) Optionally place starter structures; skip for simple preview
+  if (!SIMPLE_ISLAND_ONLY && !CREATE_MODE) {
+    const gs: Array<{ x: number; y: number }> = [];
+    each((x, y, c: any) => { if (c.type === T.GRASS) gs.push({ x, y }); });
+    const s = gs.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))[0] || { x: Math.floor(cx), y: Math.floor(cy) };
+    (state.map[idx(s.x, s.y)] as any).type = T.HUT;
+    ensureStartResources(s.x, s.y);
+    reveal(s.x, s.y, 1);
+    let towns = 0;
+    each((x, y, c: any) => {
+      if (towns < 2 && (c.type === T.GRASS || c.type === T.FOREST) && (x + y) % 7 === 0 && worldGenRng!() < 0.25) {
+        c.type = T.TOWN;
+        towns++;
+      }
+    });
+  } else {
+    // In create mode, no starter structures; keep fully revealed water
+  }
   // Compute initial heights based on terrain
   computeHeightMap();
   // Update seed display for UI
@@ -494,29 +513,65 @@ function tile(x: number, y: number, c: any) {
   // Try to use tile atlas if available
   const atlas = tileAtlasModule?.tileAtlas;
   if (atlas && atlas.isLoaded()) {
-    let atlasType = t || T.WATER;
-    let isCoast = false;
-
-    if (t === T.WATER) {
-      // Check if this is a coastal tile
-      for (const d of DIRS) {
-        const nx = x + d[0],
-          ny = y + d[1];
-        if (inBounds(nx, ny)) {
-          const n = rt(state.map[idx(nx, ny)]);
-          if (n !== T.WATER) {
-            isCoast = true;
-            break;
-          }
-        }
-      }
-      atlasType = isCoast ? "coast" : "water";
-    }
-
     const useLetters = true; // Use letter tiles during development
     const useFog = state.fogEnabled !== false && !c.disc;
 
-    const tileCanvas = atlas.getTileCanvas(atlasType, useLetters, useFog);
+    let tileCanvas: HTMLCanvasElement | null = null;
+
+    if (t === T.WATER) {
+      // 2D preview: draw procedurally to match auto-tile-test.html 1:1
+      const tsz = state.size.t;
+      const px0 = px, py0 = py;
+      // Base water
+      ctx.fillStyle = '#0b2a4a';
+      ctx.fillRect(px0, py0, tsz, tsz);
+      // Compute overlays
+      const q = {
+        inBounds: (xx: number, yy: number) => inBounds(xx, yy),
+        isLand: (xx: number, yy: number) => {
+          if (!inBounds(xx, yy)) return false;
+          const tt = rt(state.map[idx(xx, yy)]);
+          return tt !== T.WATER;
+        }
+      };
+      const { edges, corners, caps } = getCoastOverlaysAt(q as any, x, y);
+      const e = Math.max(2, Math.round(tsz * 0.28));
+      const r = Math.max(3, Math.round(tsz * 0.42));
+      // Edges
+      ctx.fillStyle = '#1f6feb';
+      for (const d of edges) {
+        if (d === 'N') ctx.fillRect(px0, py0, tsz, e);
+        if (d === 'S') ctx.fillRect(px0, py0 + tsz - e, tsz, e);
+        if (d === 'W') ctx.fillRect(px0, py0, e, tsz);
+        if (d === 'E') ctx.fillRect(px0 + tsz - e, py0, e, tsz);
+      }
+      // Caps
+      for (const cdir of caps) {
+        if (cdir === 'NW') ctx.fillRect(px0, py0, e, e);
+        if (cdir === 'NE') ctx.fillRect(px0 + tsz - e, py0, e, e);
+        if (cdir === 'SW') ctx.fillRect(px0, py0 + tsz - e, e, e);
+        if (cdir === 'SE') ctx.fillRect(px0 + tsz - e, py0 + tsz - e, e, e);
+      }
+      // Corners (quarter-circle)
+      for (const cdir of corners) {
+        ctx.beginPath();
+        if (cdir === 'NW') { ctx.moveTo(px0, py0); ctx.arc(px0, py0, r, 0, Math.PI/2, true); }
+        if (cdir === 'NE') { ctx.moveTo(px0 + tsz, py0); ctx.arc(px0 + tsz, py0, r, Math.PI, Math.PI/2, true); }
+        if (cdir === 'SW') { ctx.moveTo(px0, py0 + tsz); ctx.arc(px0, py0 + tsz, r, 0, -Math.PI/2, true); }
+        if (cdir === 'SE') { ctx.moveTo(px0 + tsz, py0 + tsz); ctx.arc(px0 + tsz, py0 + tsz, r, Math.PI, -Math.PI/2, true); }
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Selection overlay if selected
+      if (state.sel === idx(x, y)) {
+        ctx.strokeStyle = varA; ctx.lineWidth = 2; ctx.strokeRect(px0 + 1, py0 + 1, tsz - 2, tsz - 2);
+      }
+      return; // Done procedurally for water; skip atlas path
+    } else {
+      // Land tiles: use coast_land as a generic base for now if no per-biome art
+      const baseKey = (t === T.GRASS || t === T.FOREST || t === T.MOUNTAIN || t === T.HILL) ? 'coast_land' : (t || T.WATER);
+      tileCanvas = atlas.getTileCanvas(baseKey, useLetters, useFog);
+    }
     if (tileCanvas) {
       // Scale the 16x16 tile to the current tile size
       ctx.save();
@@ -677,6 +732,7 @@ const canvasClick = (e: MouseEvent) => {
   const x = Math.floor(cx / state.size.t);
   const y = Math.floor(cy / state.size.t);
   if (!inBounds(x, y)) return;
+  if (CREATE_MODE) { state.sel = idx(x, y); draw(); return; }
   state.sel = idx(x, y);
   draw();
   openPanel(x, y);
@@ -684,15 +740,30 @@ const canvasClick = (e: MouseEvent) => {
 canvas.addEventListener("click", canvasClick);
 // Debug height controls: +/- to raise/lower selected tile and propagate to neighbors
 document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (state.sel == null) return;
-  if (e.key === "+" || e.key === "=") {
-    // Only affect the selected tile (no propagation) for manual testing
-    adjustHeightByIndex(state.sel, +1, false);
-    e.preventDefault();
-  }
-  if (e.key === "-" || e.key === "_") {
-    adjustHeightByIndex(state.sel, -1, false);
-    e.preventDefault();
+  if (CREATE_MODE) {
+    if (state.sel == null) return;
+    const x0 = state.sel % state.size.w, y0 = Math.floor(state.sel / state.size.w);
+    if (e.key === "+" || e.key === "=") {
+      growIslandAt(x0, y0);
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "-" || e.key === "_") {
+      erodeIslandAt(x0, y0);
+      e.preventDefault();
+      return;
+    }
+    return;
+  } else {
+    if (state.sel == null) return;
+    if (e.key === "+" || e.key === "=") {
+      adjustHeightByIndex(state.sel, +1, false);
+      e.preventDefault();
+    }
+    if (e.key === "-" || e.key === "_") {
+      adjustHeightByIndex(state.sel, -1, false);
+      e.preventDefault();
+    }
   }
 });
 // Fog of War toggle (F key)
@@ -725,6 +796,70 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
     e.preventDefault();
   }
 });
+
+// === Autotile test helpers ===
+function toggleTileForAutotileTest(x: number, y: number, erase = false) {
+  const i = idx(x, y);
+  const c = state.map[i] as any;
+  if (!c) return;
+  const t = rt(c);
+  if (erase || t !== T.WATER) c.type = T.WATER; else c.type = T.GRASS;
+  c.disc = true;
+  draw();
+}
+
+// Create Mode: grow/erode operations
+function growIslandAt(cx: number, cy: number) {
+  if (!inBounds(cx, cy)) return;
+  // If center is water, seed it; else grow by 4-neighborhood frontier
+  const cur = state.map[idx(cx, cy)] as any;
+  if (rt(cur) === T.WATER) {
+    cur.type = T.GRASS;
+    cur.disc = true;
+    draw();
+    return;
+  }
+  // Collect frontier: water tiles adjacent to any land
+  const frontier: Array<[number, number]> = [];
+  each((x, y, c: any) => {
+    if (rt(c) !== T.WATER) return;
+    for (const d of DIRS) {
+      const nx = x + d[0], ny = y + d[1];
+      if (!inBounds(nx, ny)) continue;
+      if (rt(state.map[idx(nx, ny)] as any) !== T.WATER) { frontier.push([x, y]); break; }
+    }
+  });
+  // If no frontier, expand a small plus shape around center
+  const candidates: Array<[number, number]> = [
+    [cx + 1, cy],
+    [cx - 1, cy],
+    [cx, cy + 1],
+    [cx, cy - 1],
+  ];
+  const toFill: Array<[number, number]> = frontier.length
+    ? frontier
+    : candidates.filter(([x, y]) => inBounds(x, y));
+  for (const [x, y] of toFill) {
+    const c = state.map[idx(x,y)] as any; if (!c) continue; c.type = T.GRASS; c.disc = true;
+  }
+  draw();
+}
+function erodeIslandAt(cx: number, cy: number) {
+  if (!inBounds(cx, cy)) return;
+  // Remove coastal ring: land tiles adjacent to water
+  const remove: Array<[number, number]> = [];
+  each((x, y, c: any) => {
+    if (rt(c) === T.WATER) return;
+    for (const d of DIRS) {
+      const nx = x + d[0], ny = y + d[1];
+      if (!inBounds(nx, ny)) continue;
+      if (rt(state.map[idx(nx, ny)] as any) === T.WATER) { remove.push([x, y]); break; }
+    }
+  });
+  if (remove.length === 0) return; // nothing to erode
+  for (const [x,y] of remove) { (state.map[idx(x,y)] as any).type = T.WATER; }
+  draw();
+}
 
 // ===== Rules / UI =====
 const afford = (c: any) =>
@@ -940,6 +1075,7 @@ function updateFarmSynergy(d?: any) {
 }
 
 function openPanel(x: number, y: number) {
+  if (CREATE_MODE) { $("panel").innerHTML = ""; return; }
   const c = state.map[idx(x, y)] as any,
     P = $("panel");
   if (!c) {
@@ -1447,6 +1583,11 @@ showStart();
     const RN = (window as any).KBTS_Renderer;
     return RN?.get?.() || "debug";
   },
+  // Toggle simple island generation for coast autotiling validation
+  setSimpleIslandOnly: (v: boolean) => { SIMPLE_ISLAND_ONLY = !!v; },
+  getSimpleIslandOnly: () => SIMPLE_ISLAND_ONLY,
+  setCreateMode: (v: boolean) => { CREATE_MODE = !!v; },
+  getCreateMode: () => CREATE_MODE,
 };
 
 // ===== Height System =====
