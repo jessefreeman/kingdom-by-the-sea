@@ -1,169 +1,141 @@
-# 8-Bit Auto-Tiling Specification for Kingdom by the Sea
+# Coastline Auto-Tiling Specification (Water/Land)
 
 ## Overview
 
-This document defines the 8-bit auto-tiling system used for seamless tile transitions, starting with water tiles. The system uses a 64x64 texture containing 16 variants of 16x16 tiles arranged in a 4x4 grid.
+This spec describes the coastline auto-tiler implemented in `frontend/auto-tile-test.html`. The algorithm operates on a binary grid where 1 = Land and 0 = Water. It draws outside edges on Water tiles that are adjacent to Land, and it also adds convex corners and tiny diagonal caps to close gaps. There is no 256-entry bitmask lookup; instead, neighbors are inspected directly and the appropriate overlay pieces are emitted.
 
-## Auto-Tiling Concept
+Key properties:
+- Tile size: 16×16 px
+- Coordinate system: x→ (columns), y↓ (rows)
+- Land is rendered as full tiles; edges/corners/caps are rendered on Water tiles that border Land
 
-Auto-tiling automatically selects the correct tile variant based on the presence of matching tiles in the 8 adjacent positions (4 cardinal + 4 diagonal directions). Each tile variant handles a specific combination of connections.
+## Tilesheet Layout (8×2 grid, 16 tiles total)
 
-## Template Layout (4x4 Grid)
+The tilesheet used by the demo is arranged in 2 rows × 8 columns (indices enumerate left→right, top→bottom):
 
-The auto-tile template follows this standard layout:
+- 0: Water (base)
+- 1: Land (full tile)
+- 2–5: Edges N, E, S, W (thin bands drawn along the corresponding side)
+- 6–9: Convex corners NW, NE, SW, SE (quarter-round arcs drawn into the corner)
+- 10–13: Diagonal caps NW, NE, SW, SE (small squares to fill diagonal-only contact gaps)
+- 14–15: Unused (reserved)
 
-```
-+---+---+---+---+
-| 0 | 1 | 2 | 3 |  Row 0: Corner and edge combinations
-+---+---+---+---+
-| 4 | 5 | 6 | 7 |  Row 1: Complex edge cases  
-+---+---+---+---+
-| 8 | 9 |10 |11 |  Row 2: Diagonal corner combinations
-+---+---+---+---+
-|12 |13 |14 |15 |  Row 3: Full connections and special cases
-+---+---+---+---+
-```
+Notes:
+- Edges and corners are drawn in the same color/style and are intended to be layered on top of the Water base.
+- “Caps” are very small squares used when a Water tile only touches Land diagonally (no cardinal adjacency), to avoid tiny pinhole gaps.
 
-## Tile Index Mapping
+## Neighborhood Logic (no bitmask)
 
-Based on the visual analysis of the provided template:
+Given a grid `grid[y][x]` where `1 = Land`, `0 = Water`:
 
-### Row 0 (Basic Corners and Edges)
-- **Tile 0**: Top-left outer corner
-- **Tile 1**: Top edge connection
-- **Tile 2**: Top-right outer corner  
-- **Tile 3**: Right edge connection
+For each tile (x,y):
+1. If `grid[y][x] === 1` → emit a Land tile at (x,y). No edges/corners/caps are placed on Land tiles.
+2. Else (Water tile), compute 8 neighbors (use out-of-bounds = 0/Water):
+   - Cardinals: N=(x, y-1), E=(x+1, y), S=(x, y+1), W=(x-1, y)
+   - Diagonals: NE=(x+1, y-1), NW=(x-1, y-1), SE=(x+1, y+1), SW=(x-1, y+1)
 
-### Row 1 (Complex Edges)
-- **Tile 4**: Left edge connection
-- **Tile 5**: Full center tile (all sides connected)
-- **Tile 6**: Inner corner combinations
-- **Tile 7**: Bottom-right outer corner
+Then emit overlays on the Water tile at (x,y) as follows:
 
-### Row 2 (Diagonal Corners)
-- **Tile 8**: Bottom-left outer corner
-- **Tile 9**: Bottom edge connection
-- **Tile 10**: Complex inner corner
-- **Tile 11**: Vertical edge only
+- Edges (if a cardinal neighbor is Land):
+  - If N==1 → place Edge-N (tile 2)
+  - If E==1 → place Edge-E (tile 3)
+  - If S==1 → place Edge-S (tile 4)
+  - If W==1 → place Edge-W (tile 5)
 
-### Row 3 (Special Cases)
-- **Tile 12**: Horizontal edge only
-- **Tile 13**: Isolated tile (no connections)
-- **Tile 14**: Triple connection variants
-- **Tile 15**: Complex connection patterns
+- Convex corners (if two adjacent cardinals are Land):
+  - If N==1 and W==1 → place Corner-NW (tile 6)
+  - If N==1 and E==1 → place Corner-NE (tile 7)
+  - If S==1 and W==1 → place Corner-SW (tile 8)
+  - If S==1 and E==1 → place Corner-SE (tile 9)
 
-## 8-Bit Calculation Method
+- Diagonal caps (if only a diagonal neighbor is Land, and its adjacent cardinals are Water):
+  - If NE==1 and N==0 and E==0 → place Cap-NE (tile 11)
+  - If NW==1 and N==0 and W==0 → place Cap-NW (tile 10)
+  - If SE==1 and S==0 and E==0 → place Cap-SE (tile 13)
+  - If SW==1 and S==0 and W==0 → place Cap-SW (tile 12)
 
-The tile index is calculated using 8 bits representing the 8 adjacent positions:
+Result: Water tiles bordering Land receive the appropriate outside edges and rounded corners; small diagonal-only gaps are filled with caps. Land tiles remain solid.
 
-```
-NW  N  NE     7  0  1
- W  C   E  =  6  C  2  
-SW  S  SE     5  4  3
-```
+### Reference implementation (simplified TypeScript-ish)
 
-Where:
-- **N, E, S, W**: Cardinal directions (North, East, South, West)
-- **NW, NE, SW, SE**: Diagonal directions (corners)
-- **C**: Center tile being calculated
+```ts
+type Cell = 0 | 1; // 0 = Water, 1 = Land
 
-### Bit Calculation
-```
-bit_value = 0
-if (North tile matches)     bit_value |= (1 << 0)  // bit 0
-if (NorthEast tile matches) bit_value |= (1 << 1)  // bit 1  
-if (East tile matches)      bit_value |= (1 << 2)  // bit 2
-if (SouthEast tile matches) bit_value |= (1 << 3)  // bit 3
-if (South tile matches)     bit_value |= (1 << 4)  // bit 4
-if (SouthWest tile matches) bit_value |= (1 << 5)  // bit 5
-if (West tile matches)      bit_value |= (1 << 6)  // bit 6
-if (NorthWest tile matches) bit_value |= (1 << 7)  // bit 7
+interface Coast {
+  land: {x:number,y:number}[];
+  edges: {x:number,y:number,d:'N'|'E'|'S'|'W'}[];
+  corners: {x:number,y:number,c:'NW'|'NE'|'SW'|'SE'}[];
+  caps: {x:number,y:number,c:'NW'|'NE'|'SW'|'SE'}[];
+}
 
-tile_index = lookup_table[bit_value]
-```
+function autotileCoast(grid: Cell[][]): Coast {
+  const H = grid.length, W = grid[0].length;
+  const coast: Coast = { land: [], edges: [], corners: [], caps: [] };
+  const at = (x:number,y:number)=> (y>=0&&y<H&&x>=0&&x<W) ? grid[y][x] : 0;
 
-## Lookup Table (8-bit to Tile Index)
+  for (let y=0;y<H;y++){
+    for (let x=0;x<W;x++){
+      const self = at(x,y);
+      if (self === 1) { coast.land.push({x,y}); continue; }
 
-The lookup table maps the 8-bit value (0-255) to the appropriate tile index (0-15):
+      const N=at(x,y-1), E=at(x+1,y), S=at(x,y+1), Wn=at(x-1,y);
+      const NE=at(x+1,y-1), NW=at(x-1,y-1), SE=at(x+1,y+1), SW=at(x-1,y+1);
 
-```typescript
-// Simplified lookup table - needs to be populated based on visual analysis
-const AUTO_TILE_LOOKUP: number[] = [
-  13, // 0b00000000 - no connections (isolated)
-   9, // 0b00000001 - north only
-   1, // 0b00000010 - northeast only  
-   // ... (256 entries total)
-   5, // 0b11111111 - all connections (full center)
-];
-```
+      if (N===1) coast.edges.push({x,y,d:'N'});
+      if (E===1) coast.edges.push({x,y,d:'E'});
+      if (S===1) coast.edges.push({x,y,d:'S'});
+      if (Wn===1) coast.edges.push({x,y,d:'W'});
 
-## Implementation for Water Tiles
+      if (N===1 && Wn===1) coast.corners.push({x,y,c:'NW'});
+      if (N===1 && E===1)  coast.corners.push({x,y,c:'NE'});
+      if (S===1 && Wn===1) coast.corners.push({x,y,c:'SW'});
+      if (S===1 && E===1)  coast.corners.push({x,y,c:'SE'});
 
-### Usage Example
-```typescript
-function getWaterAutoTile(x: number, y: number, mapData: TileType[][]): number {
-  let bitValue = 0;
-  
-  // Check each of the 8 adjacent positions
-  const directions = [
-    {dx: 0, dy: -1, bit: 0}, // North
-    {dx: 1, dy: -1, bit: 1}, // NorthEast
-    {dx: 1, dy: 0,  bit: 2}, // East
-    {dx: 1, dy: 1,  bit: 3}, // SouthEast
-    {dx: 0, dy: 1,  bit: 4}, // South
-    {dx: -1, dy: 1, bit: 5}, // SouthWest
-    {dx: -1, dy: 0, bit: 6}, // West
-    {dx: -1, dy: -1, bit: 7} // NorthWest
-  ];
-  
-  for (const dir of directions) {
-    const neighborX = x + dir.dx;
-    const neighborY = y + dir.dy;
-    
-    if (isWaterTile(neighborX, neighborY, mapData)) {
-      bitValue |= (1 << dir.bit);
+      if (NE===1 && N===0 && E===0) coast.caps.push({x,y,c:'NE'});
+      if (NW===1 && N===0 && Wn===0) coast.caps.push({x,y,c:'NW'});
+      if (SE===1 && S===0 && E===0) coast.caps.push({x,y,c:'SE'});
+      if (SW===1 && S===0 && Wn===0) coast.caps.push({x,y,c:'SW'});
     }
   }
-  
-  return AUTO_TILE_LOOKUP[bitValue] || 13; // fallback to isolated tile
+  return coast;
 }
 ```
 
-### Texture Coordinates
-```typescript
-function getAutoTileUV(tileIndex: number): {x: number, y: number} {
-  const col = tileIndex % 4;
-  const row = Math.floor(tileIndex / 4);
-  
-  return {
-    x: col * 16, // 16px per tile
-    y: row * 16  // 16px per tile
-  };
+## Tile ID mapping and UVs
+
+Indices (left→right, top→bottom across an 8×2 sheet):
+
+- 0: Water
+- 1: Land
+- 2: Edge-N, 3: Edge-E, 4: Edge-S, 5: Edge-W
+- 6: Corner-NW, 7: Corner-NE, 8: Corner-SW, 9: Corner-SE
+- 10: Cap-NW, 11: Cap-NE, 12: Cap-SW, 13: Cap-SE
+- 14–15: Unused
+
+UV helper for an 8×2 sheet:
+
+```ts
+function tileIndexToUV(id: number): {x: number, y: number} {
+  const cols = 8; // fixed in demo
+  return { x: (id % cols) * 16, y: Math.floor(id / cols) * 16 };
 }
 ```
 
-## Asset Requirements
+## Asset requirements
 
-- **Texture Size**: 64x64 pixels
-- **Tile Size**: 16x16 pixels each
-- **Grid**: 4x4 arrangement
-- **Format**: PNG with transparency support
-- **Naming**: `auto-tiles-[type].png` (e.g., `auto-tiles-water.png`)
+- Tile size: 16×16 px
+- Sheet layout: 8 columns × 2 rows (generated in the demo)
+- Format: PNG with transparency
+- Suggested naming: `auto-tiles-water.png`
 
-## Integration Points
+## Integration points
 
-1. **Tile Config JSON**: Add auto-tile flag and lookup table
-2. **Renderer**: Calculate neighbor connections and select correct tile
-3. **Atlas System**: Support for 4x4 auto-tile layouts
-4. **Performance**: Cache calculations when possible
+1. Renderer: For each tile, decide Land vs Water base, then draw edges/corners/caps overlays on Water tiles per the rules above.
+2. Atlas: Support addressing into an 8×2 tilesheet via the ID mapping listed here.
+3. Debug: Optionally render overlay IDs for corners (6–9) to validate selection.
+4. Performance: Recompute only affected tiles when edits occur; cache results if needed.
 
-## Next Steps
+## Notes and future work
 
-1. Populate the complete 256-entry lookup table based on visual analysis
-2. Implement auto-tile calculation in the renderer
-3. Create additional auto-tile sets for other terrain types
-4. Add debug visualization for auto-tile selection
-
----
-
-*This specification provides the foundation for seamless tile transitions that will significantly improve the visual quality of terrain boundaries in Kingdom by the Sea.*
+- This is an “outside-edge” coastline solution; it does not blend interiors or support a full 256-case Wang/autotile mask. If needed, we can extend it to support more shapes later.
+- The last two tiles (14–15) are reserved for future pieces (e.g., T-junctions, bevel variants, or decorative ends).
