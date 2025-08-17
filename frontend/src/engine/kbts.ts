@@ -3,6 +3,7 @@
 
 import type { Cell, State, UpgradeSpec } from "../types";
 import { getCoastOverlaysAt } from "../autotile";
+import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldgen/island";
 
 // ===== DOM helpers =====
 const $ = (id: string) => document.getElementById(id)!;
@@ -361,34 +362,28 @@ async function generate(
     .fill(0)
     .map(() => cell(T.WATER));
   const cx = (state.size.w - 1) / 2,
-    cy = (state.size.h - 1) / 2,
-    maxR = Math.hypot(cx, cy);
+    cy = (state.size.h - 1) / 2;
 
   if (CREATE_MODE) {
     // Reveal all for editing
     each((x, y, c: any) => { c.disc = true; c.h = 0; });
   } else {
-    // Layer 1: island shape from ocean (radial falloff + noise)
-    each((x, y, c: any) => {
-      const radial = 0.6 - Math.hypot(x - cx, y - cy) / maxR;
-      const noise = worldGenRng!() * 0.35 - 0.15;
-      c.type = radial + noise > 0 ? T.GRASS : T.WATER;
-    });
-
-    // Enforce a water border so land never reaches the map edge (guarantees a coastline)
-    const BORDER_MARGIN = 1; // tiles of water around the map
-    if (BORDER_MARGIN > 0) {
-      for (let y = 0; y < state.size.h; y++) {
-        for (let x = 0; x < state.size.w; x++) {
-          const distToEdge = Math.min(x, y, state.size.w - 1 - x, state.size.h - 1 - y);
-          if (distToEdge < BORDER_MARGIN) {
-            const cc = state.map[idx(x, y)] as any;
-            cc.type = T.WATER;
-            cc.h = 0;
-          }
-        }
+    // Layer 1: organic island shape via coastal erosion + interior lake carving
+    const ORG: OrganicIslandParams = {
+      coastMargin: 1,
+      baseRadiusFrac: 0.5,
+      erodeIterations: 4,
+      erodePercent: 0.22,
+      lakePercent: 0.06,
+      minLakeDistToSea: 3,
+      maxLakeFlood: 24,
+    };
+    const mask = generateOrganicIslandHeight(state.size.w, state.size.h, worldGenRng!, ORG);
+    for (let y = 0; y < state.size.h; y++)
+      for (let x = 0; x < state.size.w; x++) {
+        const cc = state.map[idx(x, y)] as any;
+        if (mask[y]![x] === 1) { cc.type = T.GRASS; } else { cc.type = T.WATER; cc.h = 0; }
       }
-    }
 
     // Collect land tiles
     const land: Array<{x:number,y:number,i:number}> = [];
