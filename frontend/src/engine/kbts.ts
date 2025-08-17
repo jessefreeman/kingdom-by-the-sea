@@ -738,32 +738,18 @@ const canvasClick = (e: MouseEvent) => {
   openPanel(x, y);
 };
 canvas.addEventListener("click", canvasClick);
-// Debug height controls: +/- to raise/lower selected tile and propagate to neighbors
+// Debug height controls: +/- to raise/lower only the selected tile (no propagation)
 document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (CREATE_MODE) {
-    if (state.sel == null) return;
-    const x0 = state.sel % state.size.w, y0 = Math.floor(state.sel / state.size.w);
-    if (e.key === "+" || e.key === "=") {
-      growIslandAt(x0, y0);
-      e.preventDefault();
-      return;
-    }
-    if (e.key === "-" || e.key === "_") {
-      erodeIslandAt(x0, y0);
-      e.preventDefault();
-      return;
-    }
+  if (state.sel == null) return;
+  if (e.key === "+" || e.key === "=") {
+    adjustHeightByIndex(state.sel, +1, false);
+    e.preventDefault();
     return;
-  } else {
-    if (state.sel == null) return;
-    if (e.key === "+" || e.key === "=") {
-      adjustHeightByIndex(state.sel, +1, false);
-      e.preventDefault();
-    }
-    if (e.key === "-" || e.key === "_") {
-      adjustHeightByIndex(state.sel, -1, false);
-      e.preventDefault();
-    }
+  }
+  if (e.key === "-" || e.key === "_") {
+    adjustHeightByIndex(state.sel, -1, false);
+    e.preventDefault();
+    return;
   }
 });
 // Fog of War toggle (F key)
