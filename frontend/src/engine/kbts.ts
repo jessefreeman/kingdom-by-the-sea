@@ -375,6 +375,21 @@ async function generate(
       c.type = radial + noise > 0 ? T.GRASS : T.WATER;
     });
 
+    // Enforce a water border so land never reaches the map edge (guarantees a coastline)
+    const BORDER_MARGIN = 1; // tiles of water around the map
+    if (BORDER_MARGIN > 0) {
+      for (let y = 0; y < state.size.h; y++) {
+        for (let x = 0; x < state.size.w; x++) {
+          const distToEdge = Math.min(x, y, state.size.w - 1 - x, state.size.h - 1 - y);
+          if (distToEdge < BORDER_MARGIN) {
+            const cc = state.map[idx(x, y)] as any;
+            cc.type = T.WATER;
+            cc.h = 0;
+          }
+        }
+      }
+    }
+
     // Collect land tiles
     const land: Array<{x:number,y:number,i:number}> = [];
     each((x, y, c: any) => { if (rt(c) !== T.WATER) land.push({x,y,i:idx(x,y)}); });
