@@ -5,26 +5,15 @@ import type { Cell, State, UpgradeSpec } from "./contracts/types";
 import { getCoastOverlaysAt } from "./utilities/autotile";
 import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldgen/island";
 import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen";
+import { GameUtils } from "./utilities/GameUtils";
+import { rngService } from "./services/RNGService";
 
-// ===== DOM helpers =====
-const $ = (id: string) => document.getElementById(id)!;
-const esc = (s: any) =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-const rng32 = (initialSeed: number) => {
-  let seed = initialSeed >>> 0; // Ensure it's a 32-bit unsigned integer
-  return () => {
-    // xorshift32 algorithm - simple and effective PRNG
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    seed = seed >>> 0; // Keep as 32-bit unsigned
-    return seed / 4294967296; // Convert to [0, 1)
-  };
-};
+// Convenience aliases for frequently used utilities
+const { $, esc, ov } = GameUtils.DOM;
+const { rng32 } = GameUtils.RNG;
+const { idx: gridIdx, inBounds: gridInBounds, each: gridEach } = GameUtils.Grid;
+const { createCell } = GameUtils.Cell;
+const { debugDump: utilDebugDump, cellLabel } = GameUtils.Debug;
 
 // ===== Constants / Data =====
 const T = {
@@ -45,7 +34,7 @@ const T = {
   DOCK: "dock",
   TOWN: "town",
 } as const;
-const HOUSELINE = [T.HUT, T.HOUSE, T.MANSION, T.PALACE, T.CASTLE];
+const HOUSELINE = [T.HUT, T.HOUSE, T.MANSION, T.PALACE, T.CASTLE] as const;
 const C: Record<string, string> = {
   [T.WATER]: "#0c3b66",
   coast: "#155d96",
@@ -122,7 +111,7 @@ const state: State = {
   sel: null,
   fogEnabled: true,
 };
-const rand = () => (state.rng ? (state.rng as () => number)() : Math.random());
+const rand = () => rngService.rand();
 const idx = (x: number, y: number) => y * state.size.w + x;
 const inBounds = (x: number, y: number) =>
   x >= 0 && y >= 0 && x < state.size.w && y < state.size.h;
@@ -131,102 +120,28 @@ const each = (fn: (x: number, y: number, cell: Cell) => void) => {
     for (let x = 0; x < state.size.w; x++)
       fn(x, y, state.map[idx(x, y)] as Cell);
 };
-const rt = (c: any) => (c ? (c.upg ? c.upg.to : c.type) : null);
-
-// ===== Overlays =====
-const ov = (
-  html: string,
-  hook?: (box: HTMLElement, wrap: HTMLElement) => void
-) => {
-  const w = document.createElement("div");
-  w.className = "overlay";
-  Object.assign(w.style, {
-    position: "absolute",
-    inset: "0",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(0,0,0,.55)",
-    zIndex: "1000",
-  } as CSSStyleDeclaration);
-  w.innerHTML = `<div class="card">${html}</div>`;
-  document.body.appendChild(w);
-  if (hook) hook(w.querySelector(".card") as HTMLElement, w);
-  return w;
-};
 
 // ===== Helpers =====
-const cell = (t: string): Cell => ({
-  type: t as any,
-  disc: false,
-  upg: null,
-  wrk: 0,
-  fx: 0,
-  h: 0,
-});
-function houseNearby(x: number, y: number) {
-  for (let dy = -1; dy <= 1; dy++)
-    for (let dx = -1; dx <= 1; dx++) {
-      if (!dx && !dy) continue;
-      const nx = x + dx,
-        ny = y + dy;
-      if (!inBounds(nx, ny)) continue;
-      const t = rt(state.map[idx(nx, ny)]);
-      if (t && HOUSELINE.includes(t)) return true;
-    }
-  return false;
-}
-// ===== Debug Dump =====
-function debugDump() {
-  const W = state.size.w,
-    H = state.size.h;
-  // Build Markdown table with row/col headers; cell shows letter+height (e.g., G2, W0)
-  const letterOf = (t: string | null): string => {
-    if (!t) return "?";
-    // Prefer LABEL single-letter, else first letter uppercase
-    const lbl = LABEL[t];
-    if (lbl && lbl.length === 1) return lbl;
-    if (t === T.WATER) return "W";
-    const first = lbl ? lbl[0] : t && t.length ? t[0] : "?";
-    return String(first).toUpperCase();
-  };
-  const header = [" ", ...Array.from({ length: W }, (_, i) => String(i))].join(
-    " | "
-  );
-  const sep = Array(W + 1)
-    .fill("---")
-    .join(" | ");
-  const lines: string[] = [];
-  lines.push(`| ${header} |`);
-  lines.push(`| ${sep} |`);
-  for (let y = 0; y < H; y++) {
-    const cells: string[] = [];
-    for (let x = 0; x < W; x++) {
-      const c = state.map[idx(x, y)] as any;
-      const t = rt(c);
-      const h = c?.h | 0;
-      cells.push(`${letterOf(t)}${h}`);
-    }
-    lines.push(`| ${y} | ${cells.join(" | ")} |`);
-  }
-  const out = [
-    "KBTS DEBUG DUMP",
-    `seed: ${state.seed}`,
-    `size: ${W}x${H}`,
-    lines.join("\n"),
-  ].join("\n");
-  console.log(out);
-}
+const cell = (t: string): Cell => createCell(t);
 
+// Local wrapper functions that match original signatures
+const rt = (c: any) => GameUtils.Cell.renderType(c);
+const houseNearbyLocal = (x: number, y: number) => 
+  GameUtils.Cell.houseNearby(x, y, state.map, state.size.w, state.size.h, HOUSELINE);
+const noHouseNearbyLocal = (x: number, y: number) => 
+  GameUtils.Cell.noHouseNearby(x, y, state.map, state.size.w, state.size.h, HOUSELINE);
 // Bind K to dump
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "k" || e.key === "K") {
-    debugDump();
+    const dumpResult = GameUtils.Debug.debugDump(state, LABEL);
+    console.log([
+      "KBTS DEBUG DUMP", 
+      `seed: ${state.seed}`,
+      `size: ${state.size.w}x${state.size.h}`,
+      dumpResult
+    ].join("\n"));
   }
 });
-function noHouseNearby(x: number, y: number) {
-  return !houseNearby(x, y);
-}
 
 // ===== Spec / Explore =====
 const SPEC: Record<string, UpgradeSpec[]> = {
@@ -239,7 +154,7 @@ const SPEC: Record<string, UpgradeSpec[]> = {
       cost: { G: 1, W: 1 },
       duration: 1,
       instant: { P: 1 },
-      pre: noHouseNearby,
+      pre: noHouseNearbyLocal,
       req: "needs 1-tile spacing from other houses",
     },
   ],
@@ -264,7 +179,7 @@ const SPEC: Record<string, UpgradeSpec[]> = {
       to: T.HOUSE as any,
       cost: { G: 1, W: 1 },
       duration: 1,
-      pre: noHouseNearby,
+      pre: noHouseNearbyLocal,
       req: "needs 1-tile spacing from other houses",
     },
   ],
@@ -296,28 +211,13 @@ const resize = () => {
   }
 };
 
-// Store the original seed separately from the working seed
-let originalSeed: number = 0;
-let generationSeed: number = 0;
+// ===== State Management =====
 
-// RNG stream management for reproducibility
-let worldGenRng: (() => number) | null = null;
-let gameplayRng: (() => number) | null = null;
-let eventRng: (() => number) | null = null;
-
-// Initialize all RNG streams from the base seed
-function initializeRngStreams(baseSeed: number) {
-  originalSeed = baseSeed;
-  generationSeed = baseSeed;
-  
-  // Create separate deterministic streams for different purposes
-  worldGenRng = rng32(baseSeed);
-  gameplayRng = rng32(baseSeed ^ 0x12345678); // Different salt for gameplay
-  eventRng = rng32(baseSeed ^ 0x87654321);    // Different salt for events
-  
-  // Main state RNG follows gameplay stream
-  state.rng = gameplayRng;
-}
+// Initialize RNG service wrapper
+const initializeRngStreams = (baseSeed: number) => {
+  rngService.initializeStreams(baseSeed);
+  state.rng = rngService.getGameplayRng();
+};
 
 // ===== World Generation =====
 // Create Mode: sculpt islands directly. Start with all water; click selects a tile; +/- grows/erodes land.
@@ -348,11 +248,10 @@ async function initWorldgenPlugin() {
   // Create a minimal engine context for the plugin
   const engineContext = {
     rng: {
-      next: () => worldGenRng!(),
+      next: () => rngService.worldGen(),
       seed: (newSeed: number) => {
         // Re-initialize the worldgen RNG with new seed
-        worldGenRng = rng32(newSeed);
-        generationSeed = newSeed;
+        rngService.setGenerationSeed(newSeed);
       }
     },
     events: {
@@ -416,8 +315,8 @@ async function generate(
   
   Object.assign(state.size, sizes[size]);
   Object.assign(state, {
-    seed: generationSeed,
-    rng: gameplayRng,
+    seed: rngService.getGenerationSeed(),
+    rng: rngService.getGameplayRng(),
     year: 1,
     gold: 3,
     food: 3,
@@ -467,7 +366,7 @@ async function generate(
   resize();
   hud();
   draw();
-  $("seedOut").textContent = String(originalSeed);
+  $("seedOut").textContent = String(rngService.getOriginalSeed());
   $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
 function reveal(cx: number, cy: number, r: number) {
@@ -1009,7 +908,7 @@ const uniqueAvailable = (to: string) =>
   !(to === T.PALACE && countType(T.PALACE) >= 1) &&
   !(to === T.CASTLE && countType(T.CASTLE) >= 1);
 function bufferOK(x: number, y: number, from: string, to: string) {
-  if (!houseNearby(x, y)) return true;
+  if (!houseNearbyLocal(x, y)) return true;
   if (to === T.FARM) return true;
   if (from === T.FOREST && to === T.GRASS) return true;
   return false;
@@ -1305,7 +1204,7 @@ function randomEvent(d: any) {
     { n: "Treasure", w: 8 },
   ];
   const tot = EV.reduce((s, e) => s + e.w, 0);
-  let r = eventRng!() * tot,
+  let r = rngService.event() * tot,
     pick: string = EV[0]!.n;
   for (const e of EV) {
     r -= e.w;
@@ -1321,7 +1220,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(eventRng!() * v.length)];
+      const t = v[Math.floor(rngService.event() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let deathNote = "";
       if (ci.type === T.FARM) {
@@ -1370,7 +1269,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(eventRng!() * v.length)];
+      const t = v[Math.floor(rngService.event() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let notes: string[] = [];
       if (HOUSELINE.includes(ci.type) && state.people > 0) {
@@ -1594,7 +1493,7 @@ function setupWorldgenDebugPanel() {
   const maxLakeFloodOut = $("maxLakeFloodOut");
 
   // Initialize inputs from current config
-  if (seedIn) seedIn.value = String(originalSeed || state.seed || "");
+  if (seedIn) seedIn.value = String(rngService.getOriginalSeed() || state.seed || "");
   if (sizeSel) {
     // pick closest match
   const cur = `${state.size.w}x${state.size.h}`;
@@ -1646,11 +1545,11 @@ function setupWorldgenDebugPanel() {
 
   // Buttons
   prevSeed?.addEventListener("click", async () => {
-    const cur = parseInt(seedIn?.value || String(originalSeed || state.seed || 0), 10) || 0;
+    const cur = parseInt(seedIn?.value || String(rngService.getOriginalSeed() || state.seed || 0), 10) || 0;
     await doRegen(cur - 1);
   });
   nextSeed?.addEventListener("click", async () => {
-    const cur = parseInt(seedIn?.value || String(originalSeed || state.seed || 0), 10) || 0;
+    const cur = parseInt(seedIn?.value || String(rngService.getOriginalSeed() || state.seed || 0), 10) || 0;
     await doRegen(cur + 1);
   });
   randomSeed?.addEventListener("click", async () => {
@@ -1695,8 +1594,8 @@ setupWorldgenDebugPanel();
   startUpgrade,
   applyAdjacencyBonuses,
   uniqueAvailable,
-  noHouseNearby,
-  houseNearby,
+  noHouseNearby: noHouseNearbyLocal,
+  houseNearby: houseNearbyLocal,
   setFarmWorkers,
   farmWorkers,
   updateFarmSynergy,
@@ -1715,10 +1614,10 @@ setupWorldgenDebugPanel();
   adjustHeightByIndex,
   // RNG testing and debugging
   initializeRngStreams,
-  originalSeed: () => originalSeed,
-  worldGenRng: () => worldGenRng,
-  gameplayRng: () => gameplayRng,
-  eventRng: () => eventRng,
+  originalSeed: () => rngService.getOriginalSeed(),
+  worldGenRng: () => rngService.getWorldGenRng(),
+  gameplayRng: () => rngService.getGameplayRng(),
+  eventRng: () => rngService.getEventRng(),
   setRenderer: (name: string) => {
     const RN = (window as any).KBTS_Renderer;
     RN?.set?.(name);
@@ -1752,7 +1651,7 @@ function computeHeightMap() {
       if (t === T.WATER) h = 0;
       else if (t === T.GRASS) h = 1;
       else if (t === T.FOREST) h = 2;
-      else if (t === T.TOWN || (t && HOUSELINE.includes(t))) h = 2;
+      else if (t === T.TOWN || (t && HOUSELINE.includes(t as any))) h = 2;
       else if (t === T.MOUNTAIN) h = 4;
       else h = 1;
       c.h = h;
@@ -1786,7 +1685,7 @@ function updateSeedForTerrain(
 ) {
   // Create a sub-RNG specifically for terrain changes
   // This maintains determinism without affecting the main RNG stream
-  const terrainRng = createSubRng(generationSeed, reason, x, y);
+  const terrainRng = createSubRng(rngService.getGenerationSeed(), reason, x, y);
   
   // Update the display seed for UI purposes, but keep the RNG stream intact
   const displaySeed = (state.seed * 1664525 + 1013904223) >>> 0;
@@ -1953,7 +1852,7 @@ function computeMapStateHash() {
 function updateSeedDisplay() {
   const mapHash = computeMapStateHash();
   const so = document.getElementById("seedOut");
-  if (so) so.textContent = `${originalSeed} (state: ${mapHash.toString(16)})`;
+  if (so) so.textContent = `${rngService.getOriginalSeed()} (state: ${mapHash.toString(16)})`;
 }
 
 // Apply a height value and convert between water and land at thresholds
