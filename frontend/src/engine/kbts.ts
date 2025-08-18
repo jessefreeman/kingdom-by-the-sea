@@ -8,6 +8,7 @@ import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
+import { gameStateService } from "./services/GameStateService";
 import { 
   T, HOUSELINE, DIRS, C, LABEL, BASE,
   TERRAIN_TYPES, COLORS, TERRAIN_LABELS, BASE_PRODUCTION, DIRECTIONS
@@ -20,41 +21,21 @@ const { idx: gridIdx, inBounds: gridInBounds, each: gridEach } = GameUtils.Grid;
 const { createCell } = GameUtils.Cell;
 const { debugDump: utilDebugDump, cellLabel } = GameUtils.Debug;
 
-// ===== State =====
-const state: State = {
-  seed: 0,
-  rng: null,
-  size: {
-    w: 10,
-    h: 8,
-    t:
-      parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue("--tile"),
-        10
-      ) || 24,
-  },
-  map: [],
-  year: 1,
-  gold: 3,
-  food: 3,
-  wood: 2,
-  people: 3,
-  actions: 3,
-  sel: null,
-  fogEnabled: true,
-};
-const rand = () => rngService.rand();
-const idx = (x: number, y: number) => y * state.size.w + x;
-const inBounds = (x: number, y: number) =>
-  x >= 0 && y >= 0 && x < state.size.w && y < state.size.h;
-const each = (fn: (x: number, y: number, cell: Cell) => void) => {
-  for (let y = 0; y < state.size.h; y++)
-    for (let x = 0; x < state.size.w; x++)
-      fn(x, y, state.map[idx(x, y)] as Cell);
-};
+// ===== State Management (via GameStateService) =====
+// Initialize the game state service
+const state = gameStateService.getState();
+
+// Initialize canvas for rendering
+gameStateService.initializeCanvas();
+
+// Convenience functions that delegate to the service
+const rand = () => gameStateService.random();
+const idx = (x: number, y: number) => gameStateService.idx(x, y);
+const inBounds = (x: number, y: number) => gameStateService.inBounds(x, y);
+const each = (fn: (x: number, y: number, cell: Cell) => void) => gameStateService.each(fn);
 
 // ===== Helpers =====
-const cell = (t: string): Cell => createCell(t);
+const cell = (t: string): Cell => gameStateService.createCell(t);
 
 // Local wrapper functions that match original signatures
 const rt = (c: any) => GameUtils.Cell.renderType(c);
@@ -130,25 +111,15 @@ const SPEC: Record<string, UpgradeSpec[]> = {
 const EXPLORE = { RISK: 0.25, FOOD: 1 };
 
 // ===== Canvas / Renderer hooks =====
-const canvas = $("gameCanvas") as HTMLCanvasElement;
-const ctx = canvas.getContext("2d")!;
-const resize = () => {
-  canvas.width = state.size.w * state.size.t;
-  canvas.height = state.size.h * state.size.t;
-  try {
-    const RN = (window as any).KBTS_Renderer;
-    RN?.onResize?.();
-  } catch {
-    /* noop */
-  }
-};
+const canvas = gameStateService.getCanvas() || $("gameCanvas") as HTMLCanvasElement;
+const ctx = gameStateService.getContext() || canvas.getContext("2d")!;
+const resize = () => gameStateService.resize();
 
 // ===== State Management =====
 
 // Initialize RNG service wrapper
 const initializeRngStreams = (baseSeed: number) => {
-  rngService.initializeStreams(baseSeed);
-  state.rng = rngService.getGameplayRng();
+  gameStateService.initializeRNG(baseSeed);
 };
 
 // ===== World Generation =====
