@@ -6,6 +6,7 @@ import { getCoastOverlaysAt } from "./utilities/autotile";
 import { CoreRulesPlugin } from "../plugins/rules/core/CoreRulesPlugin";
 import { GameUIPlugin } from "../plugins/ui/GameUIPlugin";
 import { GameHUDPlugin } from "../plugins/ui/GameHUDPlugin";
+import { GameBusinessLogicPlugin } from "../plugins/business/GameBusinessLogicPlugin";
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
@@ -57,6 +58,10 @@ gameUIPlugin.init(createMockEngineContext() as any);
 // Create GameHUDPlugin instance for HUD and turn management
 const gameHUDPlugin = new GameHUDPlugin();
 gameHUDPlugin.init(createMockEngineContext() as any);
+
+// Create GameBusinessLogicPlugin instance for business logic
+const gameBusinessLogicPlugin = new GameBusinessLogicPlugin();
+gameBusinessLogicPlugin.init(createMockEngineContext() as any);
 
 // Constants for backward compatibility
 const EXPLORE = { RISK: 0.25, FOOD: 1 };
@@ -465,258 +470,30 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
-// === Autotile test helpers ===
-function toggleTileForAutotileTest(x: number, y: number, erase = false) {
-  const i = idx(x, y);
-  const c = state.map[i] as any;
-  if (!c) return;
-  const t = rt(c);
-  if (erase || t !== T.WATER) c.type = T.WATER; else c.type = T.GRASS;
-  c.disc = true;
-  draw();
-}
 
-// ===== Rules / UI =====
-const afford = (c: any) => coreRulesPlugin.afford(c);
-const whyNo = (spec: any, cell: any) => coreRulesPlugin.whyNo(spec, cell);
-const fmtCost = (c: any) =>
-  Object.entries(c || {})
-    .filter((p) => p[0] !== "Y")
-    .map((p) => p[0] + ":" + p[1])
-    .join(" ");
-const fmtYield = (y: any) =>
-  !y
-    ? ""
-    : Object.entries(y)
-        .map((p) => p[0] + ":+" + p[1] + "/t")
-        .join(" ");
-const upgradeName = (from: string, to: string) =>
-  from === T.BURNT
-    ? "CLEAR"
-    : from === T.RUBBLE
-    ? "REBUILD"
-    : String(to).toUpperCase();
-function tileInfo(c: any) {
-  const y = BASE[c.type];
-  const needs = c.type === T.FARM && !(c.wrk > 0);
-  return {
-    yield: needs ? "— (needs worker)" : y ? fmtYield(y) : "—",
-    status: c.upg
-      ? "Upgrading → " +
-        upgradeName(c.type, c.upg.to) +
-        " • " +
-        c.upg.left +
-        "t left"
-      : "—",
-  };
-}
+// ===== Rules / UI ===== (Delegated to GameBusinessLogicPlugin)
+const afford = (c: any) => gameBusinessLogicPlugin.afford(c);
+const whyNo = (spec: any, cell: any) => gameBusinessLogicPlugin.whyNo(spec, cell);
+const fmtCost = (c: any) => gameBusinessLogicPlugin.fmtCost(c);
+const fmtYield = (y: any) => gameBusinessLogicPlugin.fmtYield(y);
+const upgradeName = (from: string, to: string) => gameBusinessLogicPlugin.upgradeName(from, to);
+const tileInfo = (c: any) => gameBusinessLogicPlugin.tileInfo(c);
+const canExplore = (x: number, y: number) => gameBusinessLogicPlugin.canExplore(x, y);
+const whyNoExplore = (x: number, y: number) => gameBusinessLogicPlugin.whyNoExplore(x, y);
+const explore = (x: number, y: number) => gameBusinessLogicPlugin.explore(x, y);
+const isCoast = (x: number, y: number) => gameBusinessLogicPlugin.isCoast(x, y);
+const countType = (t: string) => gameBusinessLogicPlugin.countType(t);
+const uniqueAvailable = (to: string) => gameBusinessLogicPlugin.uniqueAvailable(to);
+const bufferOK = (x: number, y: number, from: string, to: string) => gameBusinessLogicPlugin.bufferOK(x, y, from, to);
 
-// const isAdj = (x: number, y: number) => {
-//   for (const d of DIRS) {
-//     const nx = x + d[0],
-//       ny = y + d[1];
-//     if (!inBounds(nx, ny)) continue;
-//     const nc = state.map[idx(nx, ny)] as any;
-//     if (nc && nc.disc) return true;
-//   }
-//   return false;
-// };
-const canExplore = (x: number, y: number) => coreRulesPlugin.canExplore(x, y);
-const whyNoExplore = (x: number, y: number) => coreRulesPlugin.whyNoExplore(x, y);
-function explore(x: number, y: number) {
-  const success = coreRulesPlugin.explore(x, y);
-  if (success) {
-    hud();
-    draw();
-  }
-}
+// ===== Workforce/Farm synergy ===== (Delegated to GameBusinessLogicPlugin)
+const farmWorkers = () => gameBusinessLogicPlugin.farmWorkers();
+const setFarmWorkers = (x: number, y: number, delta: number) => gameBusinessLogicPlugin.setFarmWorkers(x, y, delta);
+const updateFarmSynergy = (d?: any) => gameBusinessLogicPlugin.updateFarmSynergy(d);
 
-// const hasAdjType = (x: number, y: number, t: string) => {
-//   for (const d of DIRS) {
-//     const nx = x + d[0],
-//       ny = y + d[1];
-//     if (!inBounds(nx, ny)) continue;
-//     const nc = state.map[idx(nx, ny)] as any;
-//     if (nc && rt(nc) === t) return true;
-//   }
-//   return false;
-// };
-function isCoast(x: number, y: number) {
-  if (!inBounds(x, y)) return false;
-  const c = state.map[idx(x, y)] as any;
-  if (!c || rt(c) !== T.WATER) return false;
-  return DIRS.some((d) => {
-    const nx = x + d[0],
-      ny = y + d[1];
-    return inBounds(nx, ny) && rt(state.map[idx(nx, ny)] as any) !== T.WATER;
-  });
-}
-const countType = (t: string) => coreRulesPlugin.countType(t);
-const uniqueAvailable = (to: string) => coreRulesPlugin.uniqueAvailable(to);
-function bufferOK(x: number, y: number, from: string, to: string) {
-  if (!houseNearbyLocal(x, y)) return true;
-  if (to === T.FARM) return true;
-  if (from === T.FOREST && to === T.GRASS) return true;
-  return false;
-}
+const openPanel = (x: number, y: number) => gameBusinessLogicPlugin.openPanel(x, y);
 
-// ===== Workforce/Farm synergy =====
-const farmWorkers = () => {
-  let n = 0;
-  each((x, y, c: any) => {
-    if (c.type === T.FARM) n += c.wrk | 0;
-  });
-  return n;
-};
-function setFarmWorkers(x: number, y: number, delta: number) {
-  const i = idx(x, y),
-    c = state.map[i] as any;
-  if (!c || c.type !== T.FARM) return;
-  const cur = c.wrk | 0;
-  if (delta > 0) {
-    if (state.actions <= 0 || cur >= 1) return;
-    c.wrk = cur + 1;
-    state.actions = Math.max(0, state.actions - 1);
-  } else {
-    if (cur <= 0) return;
-    c.wrk = cur - 1;
-    state.actions = Math.min(state.people - farmWorkers(), state.actions + 1);
-  }
-  hud();
-  draw();
-  openPanel(x, y);
-}
-function updateFarmSynergy(d?: any) {
-  const hasArr = new Array(state.size.w * state.size.h).fill(false);
-  each((x, y, c: any) => {
-    if (c.type !== T.FARM || (c.wrk | 0) <= 0) return;
-    for (const dxy of DIRS) {
-      const nx = x + dxy[0],
-        ny = y + dxy[1];
-      if (!inBounds(nx, ny)) continue;
-      const n = state.map[idx(nx, ny)] as any;
-      if (n && n.type === T.FARM && (n.wrk | 0) > 0) {
-        hasArr[idx(x, y)] = true;
-        break;
-      }
-    }
-  });
-  each((x, y, c: any) => {
-    if (c.type !== T.FARM) {
-      if (c.fx) c.fx = 0;
-      return;
-    }
-    const prev = c.fx | 0,
-      has = hasArr[idx(x, y)];
-    if (has) {
-      c.fx = prev === 0 ? 1 : prev === 1 ? 2 : 2;
-      if (c.fx === 2 && prev !== 2) {
-        if (d) d.events.push(`Farm synergy active at (${x},${y})`);
-      }
-    } else {
-      c.fx = 0;
-    }
-  });
-}
-
-function openPanel(x: number, y: number) {
-  if (getCreateMode()) { $("panel").innerHTML = ""; return; }
-  const c = state.map[idx(x, y)] as any,
-    P = $("panel");
-  if (!c) {
-    P.innerHTML = "";
-    return;
-  }
-  if (!c.disc) {
-    const can = canExplore(x, y),
-      why = can ? "" : whyNoExplore(x, y),
-      dis = can ? "" : `disabled title="${esc(why)}"`;
-    P.innerHTML = `<div class="card"><div class="title">Unknown @ (${x},${y})</div><div class="section">Explore: adjacent (4-dir) only • uses 1A + 1F • ${Math.round(
-      EXPLORE.RISK * 100
-    )}% risk −1P</div><button class="btn primary" ${dis} id="e">Explore</button></div>`;
-    const b = $("e");
-    if (b)
-      (b as HTMLButtonElement).onclick = () => {
-        explore(x, y);
-        openPanel(x, y);
-      };
-    return;
-  }
-  const info = tileInfo(c),
-    opts = coreRulesPlugin.getUpgradeSpecs(c.type);
-  const farmCtrl =
-    c.type === T.FARM
-      ? `<div class="section"><div><b>Workers</b> ${
-          c.wrk | 0
-        }/1 <span class="hint">(ties up 1 Action)</span></div><div style="display:flex;gap:6px"><button class="btn" id="wMinus" ${
-          (c.wrk | 0) <= 0 ? "disabled" : ""
-        }>− Remove</button><button class="btn" id="wPlus" ${
-          state.actions <= 0 || (c.wrk | 0) >= 1 ? "disabled" : ""
-        }>+ Assign</button></div></div>`
-      : "";
-  const rows = opts.length
-    ? opts
-        .map((o, i) => {
-          const baseOK = afford(o.cost) && state.actions > 0 && !c.upg,
-            bufOK = bufferOK(x, y, c.type, o.to as any),
-            siteOK =
-              (!o.pre || o.pre(x, y)) && uniqueAvailable(o.to as any) && bufOK,
-            can = baseOK && siteOK;
-          const whyParts: string[] = [];
-          if (!baseOK) whyParts.push(whyNo(o, c));
-          if (baseOK && !siteOK) {
-            if (!bufOK) whyParts.push("residence buffer (farm-only)");
-            if (o.pre && !o.pre(x, y))
-              whyParts.push(o.req || "site requirement not met");
-            if (!uniqueAvailable(o.to as any))
-              whyParts.push("unique limit reached");
-          }
-          const why = can ? "" : whyParts.filter(Boolean).join("; "),
-            yd = [fmtYield((o as any).perTurn), fmtYield(o.instant as any)]
-              .filter(Boolean)
-              .join(" • "),
-            dis = can ? "" : `disabled title="${esc(why)}"`;
-          return `<div class="section"><div><b>Upgrade → ${upgradeName(
-            c.type,
-            o.to as any
-          )}</b> <span class="hint">${
-            o.duration
-          }t</span></div><div>Cost: ${fmtCost(o.cost)}${
-            yd ? " • " + yd : ""
-          }</div><button class="btn primary" ${dis} data-u="${i}">Start (−1A)</button></div>`;
-        })
-        .join("")
-    : '<div class="hint">No upgrades available.</div>';
-  P.innerHTML = `<div class="card"><div class="title">${c.type.toUpperCase()} @ (${x},${y})</div><div class="section"><div><b>Yield</b> ${
-    info["yield"]
-  }</div><div><b>Status</b> ${info.status}</div></div>${farmCtrl}${rows}</div>`;
-  P.querySelectorAll("[data-u]").forEach((b) => {
-    (b as HTMLButtonElement).onclick = () => {
-      const idxStr = (b as HTMLElement).getAttribute("data-u");
-      if (idxStr == null) return;
-      const uIndex = parseInt(idxStr, 10);
-      const specList = coreRulesPlugin.getUpgradeSpecs(c.type);
-      const upg = specList[uIndex];
-      if (!upg) return;
-      startUpgrade(x, y, c, upg);
-      openPanel(x, y);
-    };
-  });
-  if (c.type === T.FARM) {
-    const add = P.querySelector("#wPlus") as HTMLButtonElement | null,
-      rem = P.querySelector("#wMinus") as HTMLButtonElement | null;
-    if (add) add.onclick = () => setFarmWorkers(x, y, +1);
-    if (rem) rem.onclick = () => setFarmWorkers(x, y, -1);
-  }
-}
-
-function startUpgrade(x: number, y: number, c: any, s: UpgradeSpec) {
-  if (coreRulesPlugin.canUpgrade(x, y, s)) {
-    coreRulesPlugin.startUpgrade(x, y, s);
-    hud();
-    draw();
-  }
-}
+const startUpgrade = (x: number, y: number, c: any, s: any) => gameBusinessLogicPlugin.startUpgrade(x, y, c, s);
 
 // ===== Turn / Events ===== (Delegated to GameHUDPlugin)
 function endTurn() {
@@ -764,6 +541,24 @@ gameHUDPlugin.setGameContext({
   showStart,
   each,
   T
+});
+
+// Setup GameBusinessLogicPlugin with game context after all functions are declared
+gameBusinessLogicPlugin.setGameContext({
+  state,
+  coreRulesPlugin,
+  idx,
+  inBounds,
+  each,
+  hud,
+  draw,
+  getCreateMode,
+  BASE,
+  T,
+  DIRS,
+  EXPLORE,
+  rt,
+  houseNearbyLocal
 });
 
 // Boot bindings and worldgen debug panel (delegated to GameUIPlugin)
