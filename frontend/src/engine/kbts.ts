@@ -8,6 +8,10 @@ import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
+import { 
+  T, HOUSELINE, DIRS, C, LABEL, BASE,
+  TERRAIN_TYPES, COLORS, TERRAIN_LABELS, BASE_PRODUCTION, DIRECTIONS
+} from "./constants";
 
 // Convenience aliases for frequently used utilities
 const { $, esc, ov } = GameUtils.DOM;
@@ -15,79 +19,6 @@ const { rng32 } = GameUtils.RNG;
 const { idx: gridIdx, inBounds: gridInBounds, each: gridEach } = GameUtils.Grid;
 const { createCell } = GameUtils.Cell;
 const { debugDump: utilDebugDump, cellLabel } = GameUtils.Debug;
-
-// ===== Constants / Data =====
-const T = {
-  WATER: "water",
-  GRASS: "grass",
-  FOREST: "forest",
-  HILL: "hill",
-  MOUNTAIN: "mountain",
-  HUT: "hut",
-  HOUSE: "house",
-  MANSION: "mansion",
-  PALACE: "palace",
-  CASTLE: "castle",
-  FARM: "farm",
-  MINE: "mine",
-  BURNT: "burnt",
-  RUBBLE: "rubble",
-  DOCK: "dock",
-  TOWN: "town",
-} as const;
-const HOUSELINE = [T.HUT, T.HOUSE, T.MANSION, T.PALACE, T.CASTLE] as const;
-const C: Record<string, string> = {
-  [T.WATER]: "#0c3b66",
-  coast: "#155d96",
-  [T.GRASS]: "#2e7d32",
-  [T.FOREST]: "#1f5f24",
-  [T.HILL]: "#7c6f4a",
-  [T.MOUNTAIN]: "#5f5750",
-  [T.FARM]: "#c68f39",
-  [T.MINE]: "#8a7f78",
-  [T.HUT]: "#9b5d2e",
-  [T.HOUSE]: "#b97a3f",
-  [T.MANSION]: "#d29a5a",
-  [T.PALACE]: "#e2b874",
-  [T.CASTLE]: "#e5d09a",
-  [T.BURNT]: "#3a2d2d",
-  [T.RUBBLE]: "#4a4a4a",
-  [T.DOCK]: "#2563eb",
-  fog: "#0a0d1a",
-};
-const LABEL: Record<string, string> = {
-  [T.GRASS]: "G",
-  [T.FOREST]: "T",
-  // Use a different letter for HILL to avoid confusion with MOUNTAIN in debug dumps
-  [T.HILL]: "h",
-  [T.MOUNTAIN]: "M",
-  [T.HUT]: "H",
-  [T.HOUSE]: "H",
-  [T.MANSION]: "H",
-  [T.PALACE]: "H",
-  [T.CASTLE]: "H",
-  [T.FARM]: "F",
-  [T.MINE]: "M",
-  [T.BURNT]: "B",
-  [T.RUBBLE]: "R",
-  [T.DOCK]: "D",
-  [T.TOWN]: "T",
-};
-const BASE: Record<string, Partial<{ G: number; F: number; W: number }>> = {
-  [T.FARM]: { F: 2 },
-  [T.MINE]: { G: 1 },
-  [T.HOUSE]: { G: 1 },
-  [T.MANSION]: { G: 2 },
-  [T.PALACE]: { G: 3 },
-  [T.CASTLE]: { G: 4 },
-  [T.DOCK]: { F: 1, G: 1 },
-};
-const DIRS: ReadonlyArray<[number, number]> = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-];
 
 // ===== State =====
 const state: State = {

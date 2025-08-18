@@ -14,34 +14,7 @@ import { generateOrganicIslandHeight, type OrganicIslandParams } from "../../wor
 import { IslandWorldgenPlugin } from "../../plugins/worldgen/islands/IslandWorldgen";
 import { rngService } from "./RNGService";
 import { GameUtils } from "../utilities/GameUtils";
-
-// Terrain types constants
-const T = {
-  WATER: "water",
-  GRASS: "grass",
-  FOREST: "forest",
-  HILL: "hill",
-  MOUNTAIN: "mountain",
-  HUT: "hut",
-  HOUSE: "house",
-  MANSION: "mansion",
-  PALACE: "palace",
-  CASTLE: "castle",
-  FARM: "farm",
-  MINE: "mine",
-  BURNT: "burnt",
-  RUBBLE: "rubble",
-  DOCK: "dock",
-  TOWN: "town",
-} as const;
-
-const HOUSELINE = [T.HUT, T.HOUSE, T.MANSION, T.PALACE, T.CASTLE] as const;
-const DIRS: ReadonlyArray<[number, number]> = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-];
+import { T, HOUSELINE, DIRS } from "../constants";
 
 export interface WorldGenParams {
   forest: number;   // ~35% of land becomes forest
