@@ -4,8 +4,8 @@ import type { RendererPlugin, EngineContext } from '../../../engine/contracts/pl
 import type { GameState } from '../../../engine/contracts/types';
 
 // Import the existing Three.js renderer dependencies
-import { tileAtlas } from '../../../tileAtlas';
-import { getCoastOverlaysAt } from '../../../autotile';
+import { tileAtlas } from '../../../engine/services/tileAtlas';
+import { getCoastOverlaysAt } from '../../../engine/utilities/autotile';
 
 // Re-declare the existing ThreeRenderer interface from the legacy code
 interface LegacyThreeRenderer {

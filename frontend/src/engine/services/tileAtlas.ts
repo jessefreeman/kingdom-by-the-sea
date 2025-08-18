@@ -2,7 +2,7 @@
 // Now uses preloaded individual textures combined into runtime atlas
 
 import { tileAtlasPreloader, type AtlasPosition } from './tileAtlasPreloader';
-import { getCoastOverlaysAt, coastOverlayKey } from './autotile';
+import { getCoastOverlaysAt, coastOverlayKey } from '../utilities/autotile';
 
 export interface TilePosition {
   x: number;

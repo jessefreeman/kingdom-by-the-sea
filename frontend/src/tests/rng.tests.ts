@@ -1,7 +1,7 @@
 // Random Number Generator Tests
 // Tests for reproducible, deterministic random number generation
 
-import type { KBTSApi } from '../types';
+import type { KBTSApi } from '../engine/contracts/types';
 
 type RNG = () => number;
 

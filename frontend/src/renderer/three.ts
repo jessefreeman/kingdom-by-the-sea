@@ -17,8 +17,8 @@
 // - Arrow keys: Up/Down zoom, Left/Right rotate
 // - +/- keys: Zoom in/out (disabled; reserved for height debug)
 
-import { tileAtlas } from "../tileAtlas";
-import { getCoastOverlaysAt } from "../autotile";
+import { tileAtlas } from "../engine/services/tileAtlas";
+import { getCoastOverlaysAt } from "../engine/utilities/autotile";
 
 // Declare global THREE from CDN
 declare global {

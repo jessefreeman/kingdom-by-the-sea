@@ -1,7 +1,7 @@
 // Browser-run TS tests for Kingdom by the Sea
 // Ported from js/game.tests.js to keep parity during the TS migration
 
-import type { KBTSApi } from '../types';
+import type { KBTSApi } from '../engine/contracts/types';
 
 type RandFn = (() => number) | null;
 

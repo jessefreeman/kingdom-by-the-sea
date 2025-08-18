@@ -1,4 +1,4 @@
-import type { KBTSApi, Cell, State } from './types';
+import type { KBTSApi, Cell, State } from './engine/contracts/types';
 
 // Minimal TS renderer facade that wraps the existing window-based renderer
 export type Renderer = {

@@ -1,8 +1,8 @@
 // Kingdom by the Sea — TypeScript global API (KBTS)
 // Port of the JS game core, exposed on window for renderer/tests.
 
-import type { Cell, State, UpgradeSpec } from "../types";
-import { getCoastOverlaysAt } from "../autotile";
+import type { Cell, State, UpgradeSpec } from "./contracts/types";
+import { getCoastOverlaysAt } from "./utilities/autotile";
 import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldgen/island";
 import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen";
 
@@ -520,7 +520,7 @@ let tileAtlasModule: any = null;
 async function loadTileAtlas() {
   if (!tileAtlasModule) {
     try {
-      tileAtlasModule = await import("../tileAtlas");
+      tileAtlasModule = await import("./services/tileAtlas");
       await tileAtlasModule.tileAtlas.load();
       // Force redraw once atlas is loaded
       draw();
@@ -796,7 +796,7 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
 // Atlas debug display (A key)
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "a" || e.key === "A") {
-    import("../tileAtlasPreloader").then(module => {
+    import("./services/tileAtlasPreloader").then(module => {
       module.tileAtlasPreloader.showAtlasDebug(6);
     }).catch(err => {
       console.warn("Could not load atlas preloader for debug:", err);
@@ -807,7 +807,7 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
 // Atlas info to console (Shift+A)
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if ((e.key === "A") && e.shiftKey) {
-    import("../tileAtlasPreloader").then(module => {
+    import("./services/tileAtlasPreloader").then(module => {
       module.tileAtlasPreloader.logAtlasInfo();
     }).catch(err => {
       console.warn("Could not load atlas preloader for debug:", err);
