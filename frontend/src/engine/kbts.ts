@@ -9,6 +9,8 @@ import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
 import { gameStateService } from "./services/GameStateService";
+import { TerrainEditingService } from "./services/TerrainEditingService";
+import { WorldGenUIService } from "./services/WorldGenUIService";
 import { 
   T, HOUSELINE, DIRS, C, LABEL, BASE,
   TERRAIN_TYPES, COLORS, TERRAIN_LABELS, BASE_PRODUCTION, DIRECTIONS
@@ -27,6 +29,10 @@ const state = gameStateService.getState();
 
 // Initialize canvas for rendering
 gameStateService.initializeCanvas();
+
+// Initialize additional services
+const terrainEditingService = new TerrainEditingService(gameStateService, rngService, worldGenService);
+const worldGenUIService = new WorldGenUIService(rngService, worldGenService);
 
 // Convenience functions that delegate to the service
 const rand = () => gameStateService.random();
@@ -124,76 +130,24 @@ const initializeRngStreams = (baseSeed: number) => {
 
 // ===== World Generation =====
 // Access world generation configuration through service
-const getCreateMode = () => worldGenService.getCreateMode();
-const setCreateMode = (enabled: boolean) => worldGenService.setCreateMode(enabled);
-const getGenParams = () => worldGenService.getGenParams();
-const setGenParams = (params: any) => worldGenService.setGenParams(params);
-const getOrgParams = () => worldGenService.getOrgParams();
-const setOrgParams = (params: any) => worldGenService.setOrgParams(params);
+const getCreateMode = () => worldGenUIService.getCreateMode();
+const setCreateMode = (enabled: boolean) => worldGenUIService.setCreateMode(enabled);
+const getGenParams = () => worldGenUIService.getGenParams();
+const setGenParams = (params: any) => worldGenUIService.setGenParams(params);
+const getOrgParams = () => worldGenUIService.getOrgParams();
+const setOrgParams = (params: any) => worldGenUIService.setOrgParams(params);
 
 // Initialize worldgen plugin for use with legacy generate function
 async function initWorldgenPlugin() {
-  // Create a minimal engine context for the plugin
-  const engineContext = {
-    rng: {
-      next: () => rngService.worldGen(),
-      seed: (newSeed: number) => {
-        // Re-initialize the worldgen RNG with new seed
-        rngService.setGenerationSeed(newSeed);
-      }
-    },
-    events: {
-      publish: (event: string, data: any) => {
-        console.log(`Worldgen event: ${event}`, data);
-      }
-    },
-    state: {
-      get: () => ({ 
-        map: {
-          cells: state.map,  // Plugin expects cells array
-          width: state.size.w,
-          height: state.size.h
-        }, 
-        size: state.size, 
-        seed: state.seed 
-      }),
-      set: (newState: any) => {
-        // If the plugin modified map.cells, copy it back to legacy state.map
-        if (newState.map && newState.map.cells) {
-          state.map = newState.map.cells;
-        }
-        // Copy other properties except 'map' which we handled above
-        const { map, ...otherProps } = newState;
-        Object.assign(state, otherProps);
-      }
-    },
-    services: {
-      provide: (id: string, service: any) => {
-        console.log(`Service "${id}" provided`);
-      },
-      get: (id: string) => {
-        throw new Error(`Service "${id}" not available in legacy mode`);
-      }
-    },
-    logger: {
-      info: (msg: string) => console.log(`[Worldgen] ${msg}`),
-      warn: (msg: string) => console.warn(`[Worldgen] ${msg}`),
-      error: (msg: string) => console.error(`[Worldgen] ${msg}`)
-    }
-  };
-
-  const plugin = new IslandWorldgenPlugin();
-  await plugin.init(engineContext as any);
-  plugin.start(engineContext as any);
-  return plugin;
+  return await worldGenUIService.initWorldgenPlugin(state);
 }
 
 async function generate(
   seed = Date.now(),
   size: "small" | "medium" | "large" = "medium"
 ) {
-  // Use WorldGenService for world generation
-  await worldGenService.generate(state, seed, size);
+  // Use WorldGenUIService for world generation
+  await worldGenUIService.generate(state, seed, size);
   
   // Update seed display for UI  
   updateSeedDisplay();
@@ -212,11 +166,13 @@ async function generate(
   $("seedOut").textContent = String(rngService.getOriginalSeed());
   $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
+
 function reveal(cx: number, cy: number, r: number) {
-  worldGenService.reveal(state, cx, cy, r);
+  worldGenUIService.reveal(state, cx, cy, r);
 }
+
 function ensureStartResources(sx: number, sy: number) {
-  worldGenService.ensureStartResources(state, sx, sy);
+  worldGenUIService.ensureStartResources(state, sx, sy);
 }
 
 // ===== Rendering (fallback if renderer missing) =====
@@ -1469,19 +1425,16 @@ setupWorldgenDebugPanel();
 // - MOUNTAIN: 4
 // - All others default to 1 if land (non-water)
 function computeHeightMap() {
-  worldGenService.computeHeightMap(state);
+  terrainEditingService.computeHeightMap(state);
 }
 
 function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
-  if (i < 0 || i >= state.map.length) return;
-  const x = i % state.size.w,
-    y = Math.floor(i / state.size.w);
-  adjustHeightAt(x, y, delta, propagate);
+  terrainEditingService.adjustHeightByIndex(state, i, delta, propagate);
 }
 
 // Create a deterministic sub-RNG for specific operations
 function createSubRng(baseSeed: number, operation: string, x?: number, y?: number): () => number {
-  return worldGenService.createSubRng(baseSeed, operation, x, y);
+  return terrainEditingService.createSubRng(baseSeed, operation, x, y);
 }
 
 // Updated function that doesn't mutate global seed
@@ -1490,14 +1443,7 @@ function updateSeedForTerrain(
   x: number,
   y: number
 ) {
-  // Create a sub-RNG specifically for terrain changes
-  // This maintains determinism without affecting the main RNG stream
-  const terrainRng = createSubRng(rngService.getGenerationSeed(), reason, x, y);
-  
-  // Update the display seed for UI purposes, but keep the RNG stream intact
-  const displaySeed = (state.seed * 1664525 + 1013904223) >>> 0;
-  const so = document.getElementById("seedOut");
-  if (so) so.textContent = String(displaySeed);
+  terrainEditingService.updateSeedForTerrain(state, reason, x, y);
 }
 
 // Compute a hash of the current map state for display purposes only
@@ -1657,37 +1603,12 @@ function computeMapStateHash() {
 
 // Update the displayed seed for UI purposes without affecting RNG
 function updateSeedDisplay() {
-  const mapHash = computeMapStateHash();
-  const so = document.getElementById("seedOut");
-  if (so) so.textContent = `${rngService.getOriginalSeed()} (state: ${mapHash.toString(16)})`;
+  terrainEditingService.updateSeedDisplay(state);
 }
 
 // Apply a height value and convert between water and land at thresholds
 function applyHeightAndMaybeConvert(x: number, y: number, newH: number) {
-  const i = idx(x, y);
-  const c = state.map[i] as any;
-  if (!c) return;
-  const t = rt(c);
-  if (t === T.WATER) {
-    if (newH >= 1) {
-      // Water becomes land (grass) at height >= 1
-      c.type = T.GRASS;
-      c.upg = null;
-      c.h = Math.max(1, newH | 0);
-    } else {
-      c.h = 0;
-    }
-  } else {
-    if (newH <= 0) {
-      // Land removed becomes water at height 0
-      c.type = T.WATER;
-      c.upg = null;
-      c.h = 0;
-    } else {
-      // Land remains, enforce baseline of 1
-      c.h = Math.max(1, newH | 0);
-    }
-  }
+  terrainEditingService.applyHeightAndMaybeConvert(state, x, y, newH);
 }
 
 function adjustHeightAt(
@@ -1696,59 +1617,10 @@ function adjustHeightAt(
   delta: number,
   propagate: boolean
 ) {
-  if (!inBounds(x, y)) return;
-  const c = state.map[idx(x, y)] as any;
-  if (!c) return;
-  const was = c.h | 0;
-  const newH = was + delta;
-  applyHeightAndMaybeConvert(x, y, newH);
-  if (propagate) {
-    for (const d of DIRS) {
-      const nx = x + d[0],
-        ny = y + d[1];
-      if (!inBounds(nx, ny)) continue;
-      const n = state.map[idx(nx, ny)] as any;
-      if (!n) continue;
-      const nNew = (n.h | 0) + delta;
-      applyHeightAndMaybeConvert(nx, ny, nNew);
-    }
-    // After manual edit, optionally smooth descent toward water
-    smoothHeightsAround(x, y);
-  }
-  // Update the UI seed display to reflect the current state
-  updateSeedDisplay();
+  terrainEditingService.adjustHeightAt(state, x, y, delta, propagate);
   draw();
 }
 
 function smoothHeightsAround(cx: number, cy: number) {
-  // Simple 2-step relaxation: tiles must not exceed any neighbor by >1, water clamps to 0
-  for (let pass = 0; pass < 2; pass++) {
-    for (const [x, y] of [
-      [cx, cy],
-      [cx + 1, cy],
-      [cx - 1, cy],
-      [cx, cy + 1],
-      [cx, cy - 1],
-    ] as any) {
-      if (!inBounds(x, y)) continue;
-      const i = idx(x, y);
-      const c = state.map[i] as any;
-      if (!c) continue;
-      if (rt(c) === T.WATER) {
-        c.h = 0;
-        continue;
-      }
-      let maxN = 0;
-      for (const d of DIRS) {
-        const nx = x + d[0],
-          ny = y + d[1];
-        if (!inBounds(nx, ny)) continue;
-        const n = state.map[idx(nx, ny)] as any;
-        if (!n) continue;
-        maxN = Math.max(maxN, n.h | 0);
-      }
-      if ((c.h | 0) > maxN + 1) c.h = maxN + 1;
-      if ((c.h | 0) < 0) c.h = 0;
-    }
-  }
+  terrainEditingService.smoothHeightsAround(state, cx, cy);
 }
