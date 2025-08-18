@@ -343,8 +343,9 @@ interface TerrainEditingPlugin extends EnginePlugin {
 - [x] Move turn processing logic (`endTurn()` → `processTurn()`)
 - [x] Extract random events system with configurable event weights
 - [x] Move exploration and discovery mechanics
-- [ ] Add rules plugin tests with deterministic scenarios
+- [x] Add rules plugin tests with deterministic scenarios
 - [x] Update `main.ts` to load rules plugin
+- [x] Remove extracted code from kbts.ts (304-line reduction!)
 - [ ] Verify game mechanics work identically
 
 ### Phase 5: Input Management
