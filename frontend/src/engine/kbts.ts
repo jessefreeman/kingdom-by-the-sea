@@ -7,6 +7,9 @@ import { CoreRulesPlugin } from "../plugins/rules/core/CoreRulesPlugin";
 import { GameUIPlugin } from "../plugins/ui/GameUIPlugin";
 import { GameHUDPlugin } from "../plugins/ui/GameHUDPlugin";
 import { GameBusinessLogicPlugin } from "../plugins/business/GameBusinessLogicPlugin";
+import { GameRenderingPlugin } from "../plugins/rendering/GameRenderingPlugin";
+import { GameInputPlugin } from "../plugins/input/GameInputPlugin";
+import { GameWorldGenPlugin } from "../plugins/worldgen/GameWorldGenPlugin";
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
@@ -63,6 +66,18 @@ gameHUDPlugin.init(createMockEngineContext() as any);
 const gameBusinessLogicPlugin = new GameBusinessLogicPlugin();
 gameBusinessLogicPlugin.init(createMockEngineContext() as any);
 
+// Create GameRenderingPlugin instance for rendering
+const gameRenderingPlugin = new GameRenderingPlugin();
+gameRenderingPlugin.init(createMockEngineContext() as any);
+
+// Create GameInputPlugin instance for input handling
+const gameInputPlugin = new GameInputPlugin();
+gameInputPlugin.init(createMockEngineContext() as any);
+
+// Create GameWorldGenPlugin instance for world generation
+const gameWorldGenPlugin = new GameWorldGenPlugin();
+gameWorldGenPlugin.init(createMockEngineContext() as any);
+
 // Constants for backward compatibility
 const EXPLORE = { RISK: 0.25, FOOD: 1 };
 
@@ -106,369 +121,34 @@ const canvas = gameStateService.getCanvas() || $("gameCanvas") as HTMLCanvasElem
 const ctx = gameStateService.getContext() || canvas.getContext("2d")!;
 const resize = () => gameStateService.resize();
 
-// ===== State Management =====
+// ===== State Management ===== (Handled by plugins)
 
-// Initialize RNG service wrapper
-const initializeRngStreams = (baseSeed: number) => {
-  gameStateService.initializeRNG(baseSeed);
-};
+// ===== World Generation ===== (Delegated to GameWorldGenPlugin)
+const getCreateMode = () => gameWorldGenPlugin.getCreateMode();
+const setCreateMode = (enabled: boolean) => gameWorldGenPlugin.setCreateMode(enabled);
+const getGenParams = () => gameWorldGenPlugin.getGenParams();
+const setGenParams = (params: any) => gameWorldGenPlugin.setGenParams(params);
+const getOrgParams = () => gameWorldGenPlugin.getOrgParams();
+const setOrgParams = (params: any) => gameWorldGenPlugin.setOrgParams(params);
+const initWorldgenPlugin = async () => gameWorldGenPlugin.initWorldgenPlugin();
+const generate = async (seed = Date.now(), size: "small" | "medium" | "large" = "medium") => gameWorldGenPlugin.generate(seed, size);
+const reveal = (cx: number, cy: number, r: number) => gameWorldGenPlugin.reveal(cx, cy, r);
+const ensureStartResources = (sx: number, sy: number) => gameWorldGenPlugin.ensureStartResources(sx, sy);
+const initializeRngStreams = (baseSeed: number) => gameWorldGenPlugin.initializeRngStreams(baseSeed);
 
-// ===== World Generation =====
-// Access world generation configuration through service
-const getCreateMode = () => worldGenUIService.getCreateMode();
-const setCreateMode = (enabled: boolean) => worldGenUIService.setCreateMode(enabled);
-const getGenParams = () => worldGenUIService.getGenParams();
-const setGenParams = (params: any) => worldGenUIService.setGenParams(params);
-const getOrgParams = () => worldGenUIService.getOrgParams();
-const setOrgParams = (params: any) => worldGenUIService.setOrgParams(params);
+// ===== Rendering (fallback if renderer missing) ===== (Delegated to GameRenderingPlugin)
+const label = (c: any) => gameRenderingPlugin.label(c);
+const loadTileAtlas = async () => gameRenderingPlugin.loadTileAtlas();
+const tile = (x: number, y: number, c: any) => gameRenderingPlugin.tile(x, y, c);
+const drawCanvas = () => gameRenderingPlugin.drawCanvas();
+const draw = () => gameRenderingPlugin.draw();
 
-// Initialize worldgen plugin for use with legacy generate function
-async function initWorldgenPlugin() {
-  return await worldGenUIService.initWorldgenPlugin(state);
-}
-
-async function generate(
-  seed = Date.now(),
-  size: "small" | "medium" | "large" = "medium"
-) {
-  // Use WorldGenUIService for world generation
-  await worldGenUIService.generate(state, seed, size);
-  
-  // Update seed display for UI  
-  updateSeedDisplay();
-
-  // Load tile atlas for enhanced rendering - wait for it to load
-  try {
-    await loadTileAtlas();
-    console.log("Tile atlas loaded successfully");
-  } catch (e) {
-    console.warn("Could not load tile atlas:", e);
-  }
-
-  resize();
-  hud();
-  draw();
-  $("seedOut").textContent = String(rngService.getOriginalSeed());
-  $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
-}
-
-function reveal(cx: number, cy: number, r: number) {
-  worldGenUIService.reveal(state, cx, cy, r);
-}
-
-function ensureStartResources(sx: number, sy: number) {
-  worldGenUIService.ensureStartResources(state, sx, sy);
-}
-
-// ===== Rendering (fallback if renderer missing) =====
-const varA = "#7bdff6";
-const label = (c: any) =>
-  !c || c.type === T.WATER
-    ? ""
-    : c.disc
-    ? LABEL[c.type] || c.type.slice(0, 2).toUpperCase()
-    : "?";
-
-// Import tile atlas for debug renderer
-let tileAtlasModule: any = null;
-async function loadTileAtlas() {
-  if (!tileAtlasModule) {
-    try {
-      tileAtlasModule = await import("./services/tileAtlas");
-      await tileAtlasModule.tileAtlas.load();
-      // Force redraw once atlas is loaded
-      draw();
-    } catch (e) {
-      console.warn("Could not load tile atlas for debug renderer:", e);
-    }
-  }
-  return tileAtlasModule?.tileAtlas;
-}
-
-function tile(x: number, y: number, c: any) {
-  const ts = state.size.t,
-    px = x * ts,
-    py = y * ts;
-  if (!c) {
-    ctx.fillStyle = "#0b0f22";
-    ctx.fillRect(px, py, ts, ts);
-    return;
-  }
-  const t = rt(c);
-  const h = c.h | 0; // height levels; 1 level = 16px in 3D, but here we fake shadow/offset
-
-  // Try to use tile atlas if available
-  const atlas = tileAtlasModule?.tileAtlas;
-  if (atlas && atlas.isLoaded()) {
-    const useLetters = true; // Use letter tiles during development
-    const useFog = state.fogEnabled !== false && !c.disc;
-
-    let tileCanvas: HTMLCanvasElement | null = null;
-
-    if (t === T.WATER) {
-      // 2D preview: draw procedurally to match auto-tile-test.html 1:1
-      const tsz = state.size.t;
-      const px0 = px, py0 = py;
-      // Base water
-      ctx.fillStyle = '#0b2a4a';
-      ctx.fillRect(px0, py0, tsz, tsz);
-      // Compute overlays
-      const q = {
-        inBounds: (xx: number, yy: number) => inBounds(xx, yy),
-        isLand: (xx: number, yy: number) => {
-          if (!inBounds(xx, yy)) return false;
-          const tt = rt(state.map[idx(xx, yy)]);
-          return tt !== T.WATER;
-        }
-      };
-      const { edges, corners, caps } = getCoastOverlaysAt(q as any, x, y);
-      const e = Math.max(2, Math.round(tsz * 0.28));
-      const r = Math.max(3, Math.round(tsz * 0.42));
-      // Edges
-      ctx.fillStyle = '#1f6feb';
-      for (const d of edges) {
-        if (d === 'N') ctx.fillRect(px0, py0, tsz, e);
-        if (d === 'S') ctx.fillRect(px0, py0 + tsz - e, tsz, e);
-        if (d === 'W') ctx.fillRect(px0, py0, e, tsz);
-        if (d === 'E') ctx.fillRect(px0 + tsz - e, py0, e, tsz);
-      }
-      // Caps
-      for (const cdir of caps) {
-        if (cdir === 'NW') ctx.fillRect(px0, py0, e, e);
-        if (cdir === 'NE') ctx.fillRect(px0 + tsz - e, py0, e, e);
-        if (cdir === 'SW') ctx.fillRect(px0, py0 + tsz - e, e, e);
-        if (cdir === 'SE') ctx.fillRect(px0 + tsz - e, py0 + tsz - e, e, e);
-      }
-      // Corners (quarter-circle)
-      for (const cdir of corners) {
-        ctx.beginPath();
-        if (cdir === 'NW') { ctx.moveTo(px0, py0); ctx.arc(px0, py0, r, 0, Math.PI/2, true); }
-        if (cdir === 'NE') { ctx.moveTo(px0 + tsz, py0); ctx.arc(px0 + tsz, py0, r, Math.PI, Math.PI/2, true); }
-        if (cdir === 'SW') { ctx.moveTo(px0, py0 + tsz); ctx.arc(px0, py0 + tsz, r, 0, -Math.PI/2, true); }
-        if (cdir === 'SE') { ctx.moveTo(px0 + tsz, py0 + tsz); ctx.arc(px0 + tsz, py0 + tsz, r, Math.PI, -Math.PI/2, true); }
-        ctx.closePath();
-        ctx.fill();
-      }
-      // Selection overlay if selected
-      if (state.sel === idx(x, y)) {
-        ctx.strokeStyle = varA; ctx.lineWidth = 2; ctx.strokeRect(px0 + 1, py0 + 1, tsz - 2, tsz - 2);
-      }
-      return; // Done procedurally for water; skip atlas path
-    } else {
-      // Land tiles: use coast_land as a generic base for now if no per-biome art
-      const baseKey = (t === T.GRASS || t === T.FOREST || t === T.MOUNTAIN || t === T.HILL) ? 'coast_land' : (t || T.WATER);
-      tileCanvas = atlas.getTileCanvas(baseKey, useLetters, useFog);
-    }
-    if (tileCanvas) {
-      // Scale the atlas tile to the current tile size
-      ctx.save();
-      (ctx as any).imageSmoothingEnabled = false;
-      ctx.drawImage(tileCanvas, 0, 0, tileCanvas.width, tileCanvas.height, px, py, ts, ts);
-      ctx.restore();
-
-      // Add overlays
-      if (state.sel === idx(x, y)) {
-        ctx.strokeStyle = varA;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(px + 1, py + 1, ts - 2, ts - 2);
-      }
-
-      if (c.type === T.FARM && (c.fx | 0) === 2 && c.disc) {
-        ctx.save();
-        ctx.font = `bold ${Math.max(
-          8,
-          Math.floor(ts * 0.5)
-        )}px ui-monospace,Menlo`;
-        ctx.textAlign = "right";
-        ctx.textBaseline = "top";
-        ctx.fillStyle = "#fff";
-        ctx.globalAlpha = 0.9;
-        ctx.fillText("+", px + ts - 3, py + 2);
-        ctx.restore();
-      }
-
-      if (c.upg && c.upg.total > 1) {
-        ctx.save();
-        ctx.fillStyle = "#000";
-        ctx.globalAlpha = 0.45;
-        ctx.fillRect(px + 2, py + ts - 10, 24, 8);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 9px ui-monospace,Menlo";
-        const step = c.upg.prog || 0;
-        ctx.fillText(`${step}/${c.upg.total}`, px + 14, py + ts - 6);
-        ctx.restore();
-      }
-
-      return;
-    }
-  }
-
-  // Fallback to color-based rendering
-  if (t === T.WATER) {
-    let coast = false;
-    for (const d of DIRS) {
-      const nx = x + d[0],
-        ny = y + d[1];
-      if (inBounds(nx, ny)) {
-        const n = rt(state.map[idx(nx, ny)]);
-        if (n !== T.WATER) {
-          coast = true;
-          break;
-        }
-      }
-    }
-    ctx.fillStyle = (coast ? C.coast : C[T.WATER]) || "#0c3b66";
-  } else {
-    const fill = (t && (C as any)[t]) || "#333";
-    ctx.fillStyle = fill as string;
-  }
-  // Vertical offset for debug 2D: draw higher tiles slightly lighter border and small top offset
-  ctx.fillRect(px, py, ts, ts);
-  if (h > 0) {
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(px, py, ts, 2);
-    ctx.restore();
-  }
-  if (state.fogEnabled !== false && !c.disc) {
-    ctx.fillStyle = C.fog || "#0a0d1a";
-    ctx.globalAlpha = 0.75;
-    ctx.fillRect(px, py, ts, ts);
-    ctx.globalAlpha = 1;
-  }
-  if (state.sel === idx(x, y)) {
-    ctx.strokeStyle = varA;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(px + 1, py + 1, ts - 2, ts - 2);
-  }
-  let tl = "";
-  if (c.disc || state.fogEnabled === false) {
-    const tt = c.upg ? rt(c) : c.type;
-    tl = LABEL[tt] || String(tt).slice(0, 2).toUpperCase();
-  }
-  if (tl) {
-    ctx.save();
-    ctx.globalAlpha = 0.25;
-    ctx.font = `bold ${Math.max(9, Math.floor(ts * 0.6))}px ui-monospace,Menlo`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
-    ctx.fillText(tl, px + ts / 2, py + ts / 2 + 0.5);
-    ctx.restore();
-  }
-  // Height debug overlay
-  if ((c.disc || state.fogEnabled === false) && (c.h | 0) > 0) {
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.font = `bold ${Math.max(
-      7,
-      Math.floor(ts * 0.35)
-    )}px ui-monospace,Menlo`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "#fff";
-    ctx.fillText("h" + (c.h | 0), px + 2, py + 2);
-    ctx.restore();
-  }
-  if (c.type === T.FARM && (c.fx | 0) === 2 && c.disc) {
-    ctx.save();
-    ctx.font = `bold ${Math.max(8, Math.floor(ts * 0.5))}px ui-monospace,Menlo`;
-    ctx.textAlign = "right";
-    ctx.textBaseline = "top";
-    ctx.fillStyle = "#fff";
-    ctx.globalAlpha = 0.9;
-    ctx.fillText("+", px + ts - 3, py + 2);
-    ctx.restore();
-  }
-  if (c.upg && c.upg.total > 1) {
-    ctx.save();
-    ctx.fillStyle = "#000";
-    ctx.globalAlpha = 0.45;
-    ctx.fillRect(px + 2, py + ts - 10, 24, 8);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 9px ui-monospace,Menlo";
-    const step = c.upg.prog || 0;
-    ctx.fillText(`${step}/${c.upg.total}`, px + 14, py + ts - 6);
-    ctx.restore();
-  }
-}
-function drawCanvas() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  each((x, y, c) => tile(x, y, c));
-}
-function draw() {
-  const RN = (window as any).KBTS_Renderer;
-  if (RN?.draw) {
-    RN.draw();
-    return;
-  }
-  drawCanvas();
-}
-
-// ===== Input =====
-const canvasClick = (e: MouseEvent) => {
-  const r = canvas.getBoundingClientRect();
-  // Convert client pixels -> canvas pixels to handle CSS scaling
-  const scaleX = canvas.width / r.width;
-  const scaleY = canvas.height / r.height;
-  const cx = (e.clientX - r.left) * scaleX;
-  const cy = (e.clientY - r.top) * scaleY;
-  const x = Math.floor(cx / state.size.t);
-  const y = Math.floor(cy / state.size.t);
-  if (!inBounds(x, y)) return;
-  if (getCreateMode()) { state.sel = idx(x, y); draw(); return; }
-  state.sel = idx(x, y);
-  draw();
-  openPanel(x, y);
-};
+// ===== Input ===== (Delegated to GameInputPlugin)
+const canvasClick = (e: MouseEvent) => gameInputPlugin.handleCanvasClick(e);
 canvas.addEventListener("click", canvasClick);
-// Debug height controls: +/- to raise/lower only the selected tile (no propagation)
-document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (state.sel == null) return;
-  if (e.key === "+" || e.key === "=") {
-    adjustHeightByIndex(state.sel, +1, false);
-    e.preventDefault();
-    return;
-  }
-  if (e.key === "-" || e.key === "_") {
-    adjustHeightByIndex(state.sel, -1, false);
-    e.preventDefault();
-    return;
-  }
-});
-// Fog of War toggle (F key)
-document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "f" || e.key === "F") {
-    state.fogEnabled = !state.fogEnabled;
-    draw();
-    e.preventDefault();
-  }
-});
-// Atlas debug display (A key)
-document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "a" || e.key === "A") {
-    import("./services/tileAtlasPreloader").then(module => {
-      module.tileAtlasPreloader.showAtlasDebug(6);
-    }).catch(err => {
-      console.warn("Could not load atlas preloader for debug:", err);
-    });
-    e.preventDefault();
-  }
-});
-// Atlas info to console (Shift+A)
-document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if ((e.key === "A") && e.shiftKey) {
-    import("./services/tileAtlasPreloader").then(module => {
-      module.tileAtlasPreloader.logAtlasInfo();
-    }).catch(err => {
-      console.warn("Could not load atlas preloader for debug:", err);
-    });
-    e.preventDefault();
-  }
-});
+
+// Setup keyboard events through GameInputPlugin
+gameInputPlugin.setupKeyboardInput();
 
 
 // ===== Rules / UI ===== (Delegated to GameBusinessLogicPlugin)
@@ -559,6 +239,46 @@ gameBusinessLogicPlugin.setGameContext({
   EXPLORE,
   rt,
   houseNearbyLocal
+});
+
+// Setup GameWorldGenPlugin with game context after all functions are declared
+gameWorldGenPlugin.setGameContext({
+  state,
+  worldGenUIService,
+  rngService,
+  gameStateService,
+  resize,
+  hud,
+  draw,
+  updateSeedDisplay,
+  loadTileAtlas
+});
+
+// Setup GameRenderingPlugin with game context after all functions are declared
+gameRenderingPlugin.setGameContext({
+  state,
+  canvas,
+  ctx,
+  idx,
+  inBounds,
+  each,
+  rt,
+  T,
+  C,
+  LABEL,
+  DIRS
+});
+
+// Setup GameInputPlugin with game context after all functions are declared
+gameInputPlugin.setGameContext({
+  state,
+  canvas,
+  idx,
+  inBounds,
+  draw,
+  openPanel,
+  getCreateMode,
+  adjustHeightByIndex
 });
 
 // Boot bindings and worldgen debug panel (delegated to GameUIPlugin)
