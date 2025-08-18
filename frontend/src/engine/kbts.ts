@@ -5,6 +5,7 @@ import type { Cell, State, UpgradeSpec } from "./contracts/types";
 import { getCoastOverlaysAt } from "./utilities/autotile";
 import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldgen/island";
 import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen";
+import { CoreRulesPlugin } from "../plugins/rules/core/CoreRulesPlugin";
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
@@ -26,6 +27,34 @@ const { debugDump: utilDebugDump, cellLabel } = GameUtils.Debug;
 // ===== State Management (via GameStateService) =====
 // Initialize the game state service
 const state = gameStateService.getState();
+
+// Create CoreRulesPlugin instance for extracted functionality
+const createMockEngineContext = () => ({
+  engine: {} as any,
+  events: { publish: () => {}, subscribe: () => () => {}, once: () => () => {}, clear: () => {} },
+  services: {
+    get: (id: string) => {
+      if (id === 'rng') return rngService;
+      return gameStateService;
+    },
+    provide: () => {},
+    has: () => true
+  },
+  logger: { info: console.log, warn: console.warn, error: console.error, debug: console.log },
+  rng: rngService as any,
+  time: {} as any,
+  state: {
+    get: () => state,
+    set: (newState: any) => Object.assign(state, newState)
+  },
+  config: {}
+});
+
+const coreRulesPlugin = new CoreRulesPlugin();
+coreRulesPlugin.init(createMockEngineContext() as any);
+
+// Constants for backward compatibility
+const EXPLORE = { RISK: 0.25, FOOD: 1 };
 
 // Initialize canvas for rendering
 gameStateService.initializeCanvas();
@@ -61,60 +90,6 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
     ].join("\n"));
   }
 });
-
-// ===== Spec / Explore =====
-const SPEC: Record<string, UpgradeSpec[]> = {
-  [T.GRASS]: [
-    { to: T.FARM as any, cost: { W: 1 }, duration: 1, perTurn: { F: 1 } },
-  ],
-  [T.FARM]: [
-    {
-      to: T.HOUSE as any,
-      cost: { G: 1, W: 1 },
-      duration: 1,
-      instant: { P: 1 },
-      pre: noHouseNearbyLocal,
-      req: "needs 1-tile spacing from other houses",
-    },
-  ],
-  [T.FOREST]: [
-    { to: T.GRASS as any, cost: {}, duration: 1, instant: { W: 2 } },
-  ],
-  [T.HILL]: [
-    { to: T.MINE as any, cost: { G: 1 }, duration: 1, perTurn: { G: 1 } },
-  ],
-  [T.WATER]: [
-    {
-      to: T.DOCK as any,
-      cost: { W: 1 },
-      duration: 1,
-      perTurn: { F: 1, G: 1 },
-      pre: (x: number, y: number) => isCoast(x, y),
-      req: "coast required",
-    },
-  ],
-  [T.HUT]: [
-    {
-      to: T.HOUSE as any,
-      cost: { G: 1, W: 1 },
-      duration: 1,
-      pre: noHouseNearbyLocal,
-      req: "needs 1-tile spacing from other houses",
-    },
-  ],
-  [T.HOUSE]: [
-    { to: T.MANSION as any, cost: { G: 2 }, duration: 2, perTurn: { G: 1 } },
-  ],
-  [T.MANSION]: [
-    { to: T.PALACE as any, cost: { G: 3 }, duration: 2, perTurn: { G: 2 } },
-  ],
-  [T.PALACE]: [
-    { to: T.CASTLE as any, cost: { G: 4 }, duration: 3, perTurn: { G: 3 } },
-  ],
-  [T.BURNT]: [{ to: T.GRASS as any, cost: { W: 1 }, duration: 1 }],
-  [T.RUBBLE]: [{ to: T.HUT as any, cost: { W: 1 }, duration: 1 }],
-};
-const EXPLORE = { RISK: 0.25, FOOD: 1 };
 
 // ===== Canvas / Renderer hooks =====
 const canvas = gameStateService.getCanvas() || $("gameCanvas") as HTMLCanvasElement;
@@ -613,38 +588,14 @@ const isAdj = (x: number, y: number) => {
   }
   return false;
 };
-const canExplore = (x: number, y: number) => {
-  const c = state.map[idx(x, y)] as any;
-  return (
-    !!c &&
-    !c.disc &&
-    isAdj(x, y) &&
-    state.actions > 0 &&
-    state.people > 0 &&
-    state.food >= EXPLORE.FOOD
-  );
-};
-const whyNoExplore = (x: number, y: number) => {
-  const r: string[] = [];
-  const c = state.map[idx(x, y)] as any;
-  if (!c) r.push("invalid");
-  else if (c.disc) r.push("already visible");
-  if (!isAdj(x, y)) r.push("adjacent required");
-  if (state.actions <= 0) r.push("no actions");
-  if (state.people <= 0) r.push("no people");
-  if (state.food < EXPLORE.FOOD) r.push("need F:1");
-  return r.join(", ");
-};
+const canExplore = (x: number, y: number) => coreRulesPlugin.canExplore(x, y);
+const whyNoExplore = (x: number, y: number) => coreRulesPlugin.whyNoExplore(x, y);
 function explore(x: number, y: number) {
-  if (!canExplore(x, y)) return;
-  state.actions--;
-  state.food = Math.max(0, state.food - EXPLORE.FOOD);
-  const risk = state.year <= 5 ? 0.15 : EXPLORE.RISK;
-  if (rand() < risk && state.people > 0)
-    state.people--;
-  reveal(x, y, 1);
-  hud();
-  draw();
+  const success = coreRulesPlugin.explore(x, y);
+  if (success) {
+    hud();
+    draw();
+  }
 }
 
 const hasAdjType = (x: number, y: number, t: string) => {
@@ -786,7 +737,7 @@ function openPanel(x: number, y: number) {
     return;
   }
   const info = tileInfo(c),
-    opts = SPEC[c.type] || [];
+    opts = coreRulesPlugin.getUpgradeSpecs(c.type);
   const farmCtrl =
     c.type === T.FARM
       ? `<div class="section"><div><b>Workers</b> ${
@@ -838,7 +789,7 @@ function openPanel(x: number, y: number) {
       const idxStr = (b as HTMLElement).getAttribute("data-u");
       if (idxStr == null) return;
       const uIndex = parseInt(idxStr, 10);
-      const specList = SPEC[c.type] || [];
+      const specList = coreRulesPlugin.getUpgradeSpecs(c.type);
       const upg = specList[uIndex];
       if (!upg) return;
       startUpgrade(x, y, c, upg);
@@ -879,205 +830,16 @@ function startUpgrade(x: number, y: number, c: any, s: UpgradeSpec) {
 
 // ===== Turn / Events =====
 function endTurn() {
-  const d: any = { G: 0, F: 0, W: 0, P: 0, events: [] as string[] };
-  each((x, y, c: any) => {
-    if (c.type === T.FARM) {
-      if ((c.wrk | 0) > 0) d.F += 2 + ((c.fx | 0) === 2 ? 1 : 0);
-    } else {
-      const yld = BASE[c.type];
-      if (yld) for (const k in yld) (d as any)[k] += (yld as any)[k];
-    }
-  });
-  applyAdjacencyBonuses(d);
-  each((x, y, c: any) => {
-    if (c && c.upg) {
-      if (--c.upg.left <= 0) {
-        const to = c.upg.to;
-        const spec = c.upg.spec;
-        c.type = to;
-        if (spec && spec.instant) {
-          for (const k in spec.instant) {
-            const v = (spec.instant as any)[k];
-            if (k === "P") {
-              d.P += v;
-            } else {
-              d[k] = (d[k] | 0) + v;
-            }
-          }
-        }
-        c.upg = null;
-        reveal(x, y, 1);
-        d.events.push(
-          "Completed " + String(to).toUpperCase() + " at (" + x + "," + y + ")"
-        );
-      } else if (c.upg.total > 1) {
-        c.upg.prog = c.upg.total - c.upg.left;
-      }
-    }
-  });
-  state.gold += d.G;
-  state.food += d.F;
-  state.wood += d.W;
-  const need = state.people;
-  const fed = Math.min(state.food, need);
-  state.food -= fed;
-  if (fed === need)
-    d.events.push("All " + need + " people fed (−" + need + " F).");
-  else {
-    const deficit = need - fed;
-    d.events.push(
-      "Shortage: needed " +
-        need +
-        " F, had " +
-        fed +
-        " F (" +
-        deficit +
-        " unfed)."
-    );
-    if (state.people > 0) {
-      state.people--;
-      d.P--;
-      d.events.push("Starvation: −1 Person due to shortage.");
-    }
-    state.food = 0;
-  }
-  const growth = Math.floor(state.food / 10);
-  if (growth > 0) {
-    state.people += growth;
-    d.P += growth;
-    state.food -= growth * 10;
-    d.events.push(
-      "Population growth: +" + growth + " (used " + growth * 10 + " F)."
-    );
-  } else
-    d.events.push("Food stored: " + state.food + "/10 toward next person.");
-  if (d.P > 0) {
-    state.people += d.P;
-  }
-  state.year++;
-  state.actions = Math.max(0, state.people - farmWorkers());
-  if (!(state as any).noEvents) randomEvent(d);
-  state.actions = Math.max(0, state.people - farmWorkers());
-  updateFarmSynergy(d);
+  // Delegate to CoreRulesPlugin for turn processing
+  const result = coreRulesPlugin.processTurn();
+  
+  // Update UI
   hud();
   draw();
-  summary(d);
+  summary(result);
   winLose();
-  return d;
-}
-function randomEvent(d: any) {
-  // For backward compatibility with tests: if state.rng is manually set and different
-  // from our service's gameplay RNG, use state.rng for events too
-  const useStateRng = state.rng && state.rng !== rngService.getGameplayRng();
-  const eventRng = useStateRng ? () => (state.rng as any)() : () => rngService.event();
   
-  const EV = [
-    { n: "Fire", w: 25 },
-    { n: "Pirates", w: 20 },
-    { n: "Plague", w: 15 },
-    { n: "Storm", w: 25 },
-    { n: "Treasure", w: 8 },
-  ];
-  const tot = EV.reduce((s, e) => s + e.w, 0);
-  let r = eventRng() * tot,
-    pick: string = EV[0]!.n;
-  for (const e of EV) {
-    r -= e.w;
-    if (r < 0) {
-      pick = e.n;
-      break;
-    }
-  }
-  if (pick === "Fire") {
-    const v: any[] = [];
-    each((x, y, c: any) => {
-      if (c && c.disc && (c.type === T.FOREST || c.type === T.FARM))
-        v.push({ x, y, type: c.type });
-    });
-    if (v.length) {
-      const t = v[Math.floor(eventRng() * v.length)];
-      const ci = state.map[idx(t.x, t.y)] as any;
-      let deathNote = "";
-      if (ci.type === T.FARM) {
-        if ((ci.wrk | 0) > 0 && state.people > 0) {
-          state.people--;
-          d.P--;
-          deathNote = " — worker died (−1P)";
-        }
-        ci.wrk = 0;
-        ci.fx = 0;
-      }
-      ci.type = T.BURNT;
-      d.events.push(
-        "Fire destroyed a " +
-          t.type.toUpperCase() +
-          " at (" +
-          t.x +
-          "," +
-          t.y +
-          ") → BURNT" +
-          deathNote
-      );
-    }
-  } else if (pick === "Pirates") {
-    if (state.gold > 0) {
-      state.gold--;
-      d.G--;
-      d.events.push("Pirates stole 1 gold");
-    }
-  } else if (pick === "Plague") {
-    if (state.people > 1) {
-      state.people--;
-      d.P--;
-      d.events.push("Plague took 1 person");
-    }
-  } else if (pick === "Storm") {
-    const v: any[] = [];
-    each((x, y, c: any) => {
-      if (
-        c &&
-        c.disc &&
-        [T.HOUSE, T.MANSION, T.PALACE, T.CASTLE, T.MINE, T.FARM].includes(
-          c.type
-        )
-      )
-        v.push({ x, y, type: c.type });
-    });
-    if (v.length) {
-      const t = v[Math.floor(eventRng() * v.length)];
-      const ci = state.map[idx(t.x, t.y)] as any;
-      let notes: string[] = [];
-      if (HOUSELINE.includes(ci.type) && state.people > 0) {
-        state.people--;
-        d.P--;
-        notes.push("resident died −1P");
-      }
-      if (ci.type === T.FARM && (ci.wrk | 0) > 0) {
-        if (state.people > 0) {
-          state.people--;
-          d.P--;
-        }
-        ci.wrk = 0;
-        ci.fx = 0;
-        notes.push("worker died −1P");
-      }
-      ci.type = T.RUBBLE;
-      d.events.push(
-        "Storm reduced " +
-          t.type.toUpperCase() +
-          " at (" +
-          t.x +
-          "," +
-          t.y +
-          ") → RUBBLE" +
-          (notes.length ? " — " + notes.join("; ") : "")
-      );
-    }
-  } else {
-    state.gold++;
-    d.G++;
-    d.events.push("Found hidden treasure (+1 gold)");
-  }
+  return result;
 }
 
 // ===== HUD / Summary =====
@@ -1356,7 +1118,6 @@ setupWorldgenDebugPanel();
   T,
   C,
   LABEL,
-  SPEC,
   BASE,
   DIRS,
   idx,
@@ -1383,7 +1144,6 @@ setupWorldgenDebugPanel();
   farmWorkers,
   updateFarmSynergy,
   endTurn,
-  randomEvent,
   summary,
   countType,
   afford,
