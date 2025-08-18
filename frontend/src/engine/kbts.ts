@@ -3,8 +3,9 @@
 
 import type { Cell, State, UpgradeSpec } from "./contracts/types";
 import { getCoastOverlaysAt } from "./utilities/autotile";
-mport { CoreRulesPlugin } from "../plugins/rules/core/CoreRulesPlugin";
+import { CoreRulesPlugin } from "../plugins/rules/core/CoreRulesPlugin";
 import { GameUIPlugin } from "../plugins/ui/GameUIPlugin";
+import { GameHUDPlugin } from "../plugins/ui/GameHUDPlugin";
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
 import { worldGenService } from "./services/WorldGenService";
@@ -52,6 +53,10 @@ coreRulesPlugin.init(createMockEngineContext() as any);
 // Create GameUIPlugin instance for UI functionality
 const gameUIPlugin = new GameUIPlugin();
 gameUIPlugin.init(createMockEngineContext() as any);
+
+// Create GameHUDPlugin instance for HUD and turn management
+const gameHUDPlugin = new GameHUDPlugin();
+gameHUDPlugin.init(createMockEngineContext() as any);
 
 // Constants for backward compatibility
 const EXPLORE = { RISK: 0.25, FOOD: 1 };
@@ -713,84 +718,16 @@ function startUpgrade(x: number, y: number, c: any, s: UpgradeSpec) {
   }
 }
 
-// ===== Turn / Events =====
+// ===== Turn / Events ===== (Delegated to GameHUDPlugin)
 function endTurn() {
-  // Delegate to CoreRulesPlugin for turn processing
-  const result = coreRulesPlugin.processTurn();
-  
-  // Update UI
-  hud();
-  draw();
-  summary(result);
-  winLose();
-  
-  return result;
+  return gameHUDPlugin.endTurn();
 }
 
-// ===== HUD / Summary =====
-function summary(d: any) {
-  const deltas = "Δ G:" + d.G + " F:" + d.F + " W:" + d.W + " P:" + d.P;
-  const evHtml =
-    d.events && d.events.length
-      ? '<div class="section">' +
-        d.events
-          .filter(Boolean)
-          .map((s: string) => "<div>• " + esc(s) + "</div>")
-          .join("") +
-        "</div>"
-      : '<div class="section hint">No notable events.</div>';
-  ov(
-    '<div class="title">End of Year ' +
-      (state.year - 1) +
-      "</div>" +
-      '<div class="section">' +
-      deltas +
-      "</div>" +
-      evHtml +
-      '<button class="btn primary" id="ok">Continue</button>',
-    (box, wrap) => {
-      (box.querySelector("#ok") as HTMLButtonElement).onclick = () =>
-        wrap.remove();
-    }
-  );
-}
-function winLose() {
-  let win = false;
-  each((x, y, c: any) => {
-    if (c && c.type === T.CASTLE) win = true;
-  });
-  if (state.people <= 0) gameOver(false, "Your people are gone.");
-  else if (win) gameOver(true, "You raised a CASTLE!");
-}
-function gameOver(win: boolean, msg: string) {
-  ov(
-    '<div class="title">' +
-      (win ? "Victory" : "Game Over") +
-      '</div><div class="section">' +
-      esc(msg) +
-      '</div><div class="section">Years:' +
-      state.year +
-      " • People:" +
-      state.people +
-      " • Gold:" +
-      state.gold +
-      '</div><button class="btn primary" id="again">New Run</button>',
-    (box, wrap) => {
-      (box.querySelector("#again") as HTMLButtonElement).onclick = () => {
-        wrap.remove();
-        showStart();
-      };
-    }
-  );
-}
-function hud() {
-  $("y").textContent = String(state.year);
-  $("g").textContent = String(state.gold);
-  $("f").textContent = String(state.food);
-  $("w").textContent = String(state.wood);
-  $("p").textContent = String(state.people);
-  $("a").textContent = String(state.actions);
-}
+// ===== HUD / Summary ===== (Delegated to GameHUDPlugin)
+const summary = (d: any) => gameHUDPlugin.showSummary(d);
+const winLose = () => gameHUDPlugin.checkWinLose();
+const gameOver = (win: boolean, msg: string) => gameHUDPlugin.showGameOver(win, msg);
+const hud = () => gameHUDPlugin.updateHUD();
 
 // ===== Save / Start ===== (Delegated to GameUIPlugin)
 const save = () => gameUIPlugin.save();
@@ -817,6 +754,16 @@ gameUIPlugin.setGameContext({
   draw,
   endTurn,
   rng32
+});
+
+// Setup GameHUDPlugin with game context after all functions are declared
+gameHUDPlugin.setGameContext({
+  state,
+  coreRulesPlugin,
+  draw,
+  showStart,
+  each,
+  T
 });
 
 // Boot bindings and worldgen debug panel (delegated to GameUIPlugin)
