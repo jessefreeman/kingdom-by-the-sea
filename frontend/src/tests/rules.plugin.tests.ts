@@ -72,55 +72,112 @@ function createMockContext(): EngineContext {
   };
 }
 
-export function testRulesPlugin(): void {
-  console.log('🎮 Testing CoreRulesPlugin...');
+export function testRulesPlugin() {
+  console.log('🧪 Testing CoreRulesPlugin...');
   
-  try {
-    // Create plugin instance
-    const plugin = new CoreRulesPlugin();
-    const context = createMockContext();
+  const context = createMockContext();
+  const plugin = new CoreRulesPlugin();
+  
+  plugin.init(context);
+  
+  // Test building system
+  console.log('✅ Building system tests:');
+  
+  // Test upgrade specs
+  const grassSpecs = plugin.getUpgradeSpecs('GRASS');
+  console.log(`  GRASS upgrades: ${grassSpecs.length} options`);
+  
+  const hutSpecs = plugin.getUpgradeSpecs('HUT');
+  console.log(`  HUT upgrades: ${hutSpecs.length} options`);
+  
+  // Test resource checking
+  console.log('✅ Resource checking tests:');
+  
+  const hutSpec = plugin.getUpgradeSpecs('HUT')[0];
+  if (hutSpec) {
+    console.log(`  Can afford HUT→${hutSpec.to}: ${plugin.afford(hutSpec.cost)}`);
     
-    // Test plugin initialization
-    console.log('  ✅ Initializing plugin...');
-    plugin.init(context);
-    
-    // Test building specs access
-    console.log('  ✅ Testing building specifications...');
-    const grassSpecs = plugin.getUpgradeSpecs('grass');
-    console.log(`    Found ${grassSpecs.length} upgrade options for grass`);
-    
-    if (grassSpecs.length > 0) {
-      const farmUpgrade = grassSpecs[0]!;
-      console.log(`    Grass → ${farmUpgrade.to}: Cost W:${farmUpgrade.cost?.W || 0}, Duration: ${farmUpgrade.duration}t`);
-    }
-    
-    const houseSpecs = plugin.getUpgradeSpecs('house');
-    console.log(`    Found ${houseSpecs.length} upgrade options for house`);
-    
-    // Test resource affordability
-    console.log('  ✅ Testing resource checks...');
-    const canAffordFarm = plugin.afford({ W: 1 });
-    const canAffordMansion = plugin.afford({ G: 2 });
-    console.log(`    Can afford farm (W:1): ${canAffordFarm}`);
-    console.log(`    Can afford mansion (G:2): ${canAffordMansion}`);
-    
-    // Test expensive upgrade
-    const canAffordCastle = plugin.afford({ G: 10 });
-    console.log(`    Can afford castle (G:10): ${canAffordCastle}`);
-    
-    console.log('🎉 CoreRulesPlugin test completed successfully!');
-    console.log('');
-    console.log('✨ Plugin Features Verified:');
-    console.log('  • Building specification management');
-    console.log('  • Resource affordability checking');  
-    console.log('  • Plugin lifecycle (init/start/stop)');
-    console.log('  • Service registration and discovery');
-    console.log('');
-    console.log('🚀 Ready for Phase 4 integration!');
-    
-  } catch (error) {
-    console.error('❌ CoreRulesPlugin test failed:', error);
+    // Test with insufficient resources
+    const gameStateService = context.services.get('gameState') as any;
+    const state = gameStateService.getState();
+    state.gold = 0;
+    console.log(`  Can afford HUT→${hutSpec.to} (no gold): ${plugin.afford(hutSpec.cost)}`);
   }
+  
+  // Test turn processing
+  console.log('✅ Turn processing tests:');
+  
+  // Setup test state with farms
+  const gameStateService2 = context.services.get('gameState') as any;
+  const state2 = gameStateService2.getState();
+  state2.gold = 10;
+  state2.food = 5;
+  state2.wood = 3;
+  state2.people = 2;
+  state2.year = 1;
+  
+  // Create a simple map with a farm
+  for (let i = 0; i < state2.map.length; i++) {
+    state2.map[i] = { type: 'GRASS', disc: true };
+  }
+  
+  // Add a working farm at (5, 5)
+  const farmIdx = 5 * state2.size.w + 5;
+  state2.map[farmIdx] = { type: 'FARM', disc: true, wrk: 1, fx: 0 };
+  
+  // Process a turn
+  const turnResult = plugin.processTurn();
+  console.log(`  Turn result: G:${turnResult.G} F:${turnResult.F} W:${turnResult.W} P:${turnResult.P}`);
+  console.log(`  Events: ${turnResult.events.length} events`);
+  
+  if (turnResult.events.length > 0) {
+    turnResult.events.forEach(event => console.log(`    • ${event}`));
+  }
+  
+  const gameStateService3 = context.services.get('gameState') as any;
+  const newState = gameStateService3.getState();
+  console.log(`  State after turn: Year ${newState.year}, People ${newState.people}, Food ${newState.food}`);
+  
+  // Test exploration system
+  console.log('✅ Exploration system tests:');
+  
+  // Reset state for exploration tests
+  const exploreState = context.services.get('gameState') as any;
+  const state3 = exploreState.getState();
+  state3.actions = 3;
+  state3.food = 5;
+  state3.people = 2;
+  
+  // Create a map with some discovered tiles
+  for (let i = 0; i < state3.map.length; i++) {
+    state3.map[i] = { type: 'GRASS', disc: false };
+  }
+  
+  // Discover starting tile at (10, 8)
+  const startIdx = 8 * state3.size.w + 10;
+  state3.map[startIdx] = { type: 'GRASS', disc: true };
+  
+  // Test exploration of adjacent tile
+  const adjacentX = 11;
+  const adjacentY = 8;
+  
+  console.log(`  Can explore (${adjacentX},${adjacentY}): ${plugin.canExplore(adjacentX, adjacentY)}`);
+  
+  if (!plugin.canExplore(adjacentX, adjacentY)) {
+    console.log(`  Why not: ${plugin.whyNoExplore(adjacentX, adjacentY)}`);
+  }
+  
+  // Test exploration
+  const exploreResult = plugin.explore(adjacentX, adjacentY);
+  console.log(`  Exploration result: ${exploreResult}`);
+  
+  if (exploreResult) {
+    const postExploreState = context.services.get('gameState') as any;
+    const state4 = postExploreState.getState();
+    console.log(`  After exploration: Actions ${state4.actions}, Food ${state4.food}, People ${state4.people}`);
+  }
+  
+  console.log('✅ CoreRulesPlugin tests completed');
 }
 
 // Auto-run test if called directly

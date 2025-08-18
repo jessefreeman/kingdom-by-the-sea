@@ -340,9 +340,9 @@ interface TerrainEditingPlugin extends EnginePlugin {
 ### Phase 4: Rules & Simulation ⭐ **START HERE**
 - [x] Create `CoreRulesPlugin` skeleton with engine contracts
 - [x] Extract building specifications and upgrade system
-- [ ] Move turn processing logic (`endTurn()` → `processTurn()`)
-- [ ] Extract random events system with configurable event weights
-- [ ] Move exploration and discovery mechanics
+- [x] Move turn processing logic (`endTurn()` → `processTurn()`)
+- [x] Extract random events system with configurable event weights
+- [x] Move exploration and discovery mechanics
 - [ ] Add rules plugin tests with deterministic scenarios
 - [x] Update `main.ts` to load rules plugin
 - [ ] Verify game mechanics work identically
