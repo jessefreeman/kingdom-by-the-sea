@@ -5,6 +5,7 @@ import { rendererManager } from "./renderer";
 
 // Import new engine tests
 import { runRngTests } from "./tests/rng.tests";
+import { testRulesPlugin } from "./tests/rules.plugin.tests";
 
 // Wire up renderer switching for dev
 (window as any).KBTS_TS = { 
@@ -16,6 +17,7 @@ import { runRngTests } from "./tests/rng.tests";
 // Add engine tests to window for debugging
 (window as any).KBTS_ENGINE_TESTS = {
   runRngTests,
+  testRulesPlugin,
 };
 
 window.addEventListener("resize", () => rendererManager.resize());
