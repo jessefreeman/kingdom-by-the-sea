@@ -7,6 +7,7 @@ import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldg
 import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen";
 import { GameUtils } from "./utilities/GameUtils";
 import { rngService } from "./services/RNGService";
+import { worldGenService } from "./services/WorldGenService";
 
 // Convenience aliases for frequently used utilities
 const { $, esc, ov } = GameUtils.DOM;
@@ -220,28 +221,13 @@ const initializeRngStreams = (baseSeed: number) => {
 };
 
 // ===== World Generation =====
-// Create Mode: sculpt islands directly. Start with all water; click selects a tile; +/- grows/erodes land.
-// Default OFF to restore RNG-based layered world generation.
-let CREATE_MODE = false;
-// Legacy simple toggle kept for reference; when CREATE_MODE is enabled, this is implied
-let SIMPLE_ISLAND_ONLY = false;
-
-// Generation parameters (fractions 0..1)
-let GEN_PARAMS = {
-  forest: 0.35,   // ~35% of land becomes forest
-  mountains: 0.12, // ~12% of land becomes mountains (clustered)
-  villages: 0.08, // ~8% of land becomes villages
-};
-// Organic island shaping parameters (debug-adjustable)
-let ORG_PARAMS: OrganicIslandParams = {
-  coastMargin: 1,
-  baseRadiusFrac: 0.5,
-  erodeIterations: 4,
-  erodePercent: 0.22,
-  lakePercent: 0.06,
-  minLakeDistToSea: 3,
-  maxLakeFlood: 24,
-};
+// Access world generation configuration through service
+const getCreateMode = () => worldGenService.getCreateMode();
+const setCreateMode = (enabled: boolean) => worldGenService.setCreateMode(enabled);
+const getGenParams = () => worldGenService.getGenParams();
+const setGenParams = (params: any) => worldGenService.setGenParams(params);
+const getOrgParams = () => worldGenService.getOrgParams();
+const setOrgParams = (params: any) => worldGenService.setOrgParams(params);
 
 // Initialize worldgen plugin for use with legacy generate function
 async function initWorldgenPlugin() {
@@ -304,54 +290,9 @@ async function generate(
   seed = Date.now(),
   size: "small" | "medium" | "large" = "medium"
 ) {
-  const sizes: Record<string, { w: number; h: number }> = {
-    small: { w: 16, h: 12 },
-    medium: { w: 20, h: 16 },
-    large: { w: 30, h: 20 },
-  };
+  // Use WorldGenService for world generation
+  await worldGenService.generate(state, seed, size);
   
-  // Initialize all RNG streams
-  initializeRngStreams(seed);
-  
-  Object.assign(state.size, sizes[size]);
-  Object.assign(state, {
-    seed: rngService.getGenerationSeed(),
-    rng: rngService.getGameplayRng(),
-    year: 1,
-    gold: 3,
-    food: 3,
-    wood: 2,
-    people: 3,
-    actions: 3,
-    sel: null,
-  });
-  // 1) Base map: initialize water
-  state.map = Array(state.size.w * state.size.h)
-    .fill(0)
-    .map(() => cell(T.WATER));
-  const cx = (state.size.w - 1) / 2,
-    cy = (state.size.h - 1) / 2;
-
-  if (CREATE_MODE) {
-    // Reveal all for editing
-    each((x, y, c: any) => { c.disc = true; c.h = 0; });
-  } else {
-    // Use worldgen plugin for generation
-    const worldgenPlugin = await initWorldgenPlugin();
-    
-    // Generate world using plugin (modifies state.map in place)
-    await worldgenPlugin.generateWorld(
-      state.seed,
-      size,
-      {
-        mountains: GEN_PARAMS.mountains,
-        forest: GEN_PARAMS.forest,
-        villages: GEN_PARAMS.villages
-      }
-    );
-  }
-  // Compute initial heights based on terrain
-  computeHeightMap();
   // Update seed display for UI  
   updateSeedDisplay();
 
@@ -370,39 +311,10 @@ async function generate(
   $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
 function reveal(cx: number, cy: number, r: number) {
-  for (let y = cy - r; y <= cy + r; y++)
-    for (let x = cx - r; x <= cx + r; x++) {
-      if (!inBounds(x, y)) continue;
-      const c = state.map[idx(x, y)] as any;
-      if (c) c.disc = true;
-    }
+  worldGenService.reveal(state, cx, cy, r);
 }
 function ensureStartResources(sx: number, sy: number) {
-  const nbs: Array<{ i: number; cell: any; x: number; y: number }> = [];
-  for (const d of DIRS) {
-    const nx = sx + d[0],
-      ny = sy + d[1];
-    if (!inBounds(nx, ny)) continue;
-    nbs.push({ i: idx(nx, ny), cell: state.map[idx(nx, ny)], x: nx, y: ny });
-  }
-  if (!nbs.length) return;
-  const pref = (n: any) =>
-    n.cell.type === T.WATER ? 2 : n.cell.type === T.MOUNTAIN ? 3 : 1;
-  let forest = nbs.find((n) => (n.cell as any).type === T.FOREST);
-  if (!forest) {
-    forest = [...nbs].sort((a, b) => pref(a) - pref(b))[0]!;
-    (state.map[forest.i] as any).type = T.FOREST;
-  }
-  let grass = nbs.find(
-    (n) => (n.cell as any).type === T.GRASS && n.i !== (forest as any).i
-  );
-  if (!grass) {
-    const cand = nbs.filter((n) => n.i !== (forest as any).i);
-    const pick = (cand.length ? cand : [nbs[0]]).sort(
-      (a, b) => pref(a) - pref(b)
-    )[0]!;
-    (state.map[pick.i] as any).type = T.GRASS;
-  }
+  worldGenService.ensureStartResources(state, sx, sy);
 }
 
 // ===== Rendering (fallback if renderer missing) =====
@@ -664,7 +576,7 @@ const canvasClick = (e: MouseEvent) => {
   const x = Math.floor(cx / state.size.t);
   const y = Math.floor(cy / state.size.t);
   if (!inBounds(x, y)) return;
-  if (CREATE_MODE) { state.sel = idx(x, y); draw(); return; }
+  if (getCreateMode()) { state.sel = idx(x, y); draw(); return; }
   state.sel = idx(x, y);
   draw();
   openPanel(x, y);
@@ -993,7 +905,7 @@ function updateFarmSynergy(d?: any) {
 }
 
 function openPanel(x: number, y: number) {
-  if (CREATE_MODE) { $("panel").innerHTML = ""; return; }
+  if (getCreateMode()) { $("panel").innerHTML = ""; return; }
   const c = state.map[idx(x, y)] as any,
     P = $("panel");
   if (!c) {
@@ -1196,6 +1108,11 @@ function endTurn() {
   return d;
 }
 function randomEvent(d: any) {
+  // For backward compatibility with tests: if state.rng is manually set and different
+  // from our service's gameplay RNG, use state.rng for events too
+  const useStateRng = state.rng && state.rng !== rngService.getGameplayRng();
+  const eventRng = useStateRng ? () => (state.rng as any)() : () => rngService.event();
+  
   const EV = [
     { n: "Fire", w: 25 },
     { n: "Pirates", w: 20 },
@@ -1204,7 +1121,7 @@ function randomEvent(d: any) {
     { n: "Treasure", w: 8 },
   ];
   const tot = EV.reduce((s, e) => s + e.w, 0);
-  let r = rngService.event() * tot,
+  let r = eventRng() * tot,
     pick: string = EV[0]!.n;
   for (const e of EV) {
     r -= e.w;
@@ -1220,7 +1137,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(rngService.event() * v.length)];
+      const t = v[Math.floor(eventRng() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let deathNote = "";
       if (ci.type === T.FARM) {
@@ -1269,7 +1186,7 @@ function randomEvent(d: any) {
         v.push({ x, y, type: c.type });
     });
     if (v.length) {
-      const t = v[Math.floor(rngService.event() * v.length)];
+      const t = v[Math.floor(eventRng() * v.length)];
       const ci = state.map[idx(t.x, t.y)] as any;
       let notes: string[] = [];
       if (HOUSELINE.includes(ci.type) && state.people > 0) {
@@ -1403,14 +1320,14 @@ function showStart() {
       "</label></div>" +
     '<div class="section">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><label>Forests</label><b id="forestOut">' +
-    Math.round(GEN_PARAMS.forest*100) + '%</b></div>' +
-    '<input id="forest" type="range" min="0" max="100" step="5" value="' + Math.round(GEN_PARAMS.forest*100) + '" />' +
+    Math.round(getGenParams().forest*100) + '%</b></div>' +
+    '<input id="forest" type="range" min="0" max="100" step="5" value="' + Math.round(getGenParams().forest*100) + '" />' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 6px"><label>Mountains</label><b id="mountOut">' +
-    Math.round(GEN_PARAMS.mountains*100) + '%</b></div>' +
-    '<input id="mount" type="range" min="0" max="50" step="5" value="' + Math.round(GEN_PARAMS.mountains*100) + '" />' +
+    Math.round(getGenParams().mountains*100) + '%</b></div>' +
+    '<input id="mount" type="range" min="0" max="50" step="5" value="' + Math.round(getGenParams().mountains*100) + '" />' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 0 6px"><label>Villages</label><b id="villOut">' +
-    Math.round(GEN_PARAMS.villages*100) + '%</b></div>' +
-    '<input id="vill" type="range" min="0" max="30" step="5" value="' + Math.round(GEN_PARAMS.villages*100) + '" />' +
+    Math.round(getGenParams().villages*100) + '%</b></div>' +
+    '<input id="vill" type="range" min="0" max="30" step="5" value="' + Math.round(getGenParams().villages*100) + '" />' +
     '<div class="hint" style="margin-top:6px">Forests ~1 level above grass; Mountains ~2+. Ranges raise nearby land. Values apply per new map.</div>' +
     "</div>" +
       '<div style="display:flex;gap:8px;justify-content:flex-end">' +
@@ -1432,7 +1349,7 @@ function showStart() {
       const fPct = parseInt((box.querySelector('#forest') as HTMLInputElement).value, 10) || 0;
       const mPct = parseInt((box.querySelector('#mount') as HTMLInputElement).value, 10) || 0;
       const vPct = parseInt((box.querySelector('#vill') as HTMLInputElement).value, 10) || 0;
-      GEN_PARAMS = { forest: Math.max(0, Math.min(1, fPct/100)), mountains: Math.max(0, Math.min(1, mPct/100)), villages: Math.max(0, Math.min(1, vPct/100)) };
+      setGenParams({ forest: Math.max(0, Math.min(1, fPct/100)), mountains: Math.max(0, Math.min(1, mPct/100)), villages: Math.max(0, Math.min(1, vPct/100)) });
           await generate(Number.isFinite(sd) ? sd : Date.now(), size);
           wrap.remove();
         };
@@ -1499,15 +1416,17 @@ function setupWorldgenDebugPanel() {
   const cur = `${state.size.w}x${state.size.h}`;
   sizeSel.value = state.size.w === 16 && state.size.h === 12 ? "small" : state.size.w === 30 && state.size.h === 20 ? "large" : "medium";
   }
-  if (f && fOut) { f.value = String(Math.round(GEN_PARAMS.forest * 100)); fOut.textContent = f.value + "%"; }
-  if (m && mOut) { m.value = String(Math.round(GEN_PARAMS.mountains * 100)); mOut.textContent = m.value + "%"; }
-  if (v && vOut) { v.value = String(Math.round(GEN_PARAMS.villages * 100)); vOut.textContent = v.value + "%"; }
-  if (erIter && erIterOut) { erIter.value = String(ORG_PARAMS.erodeIterations); erIterOut.textContent = erIter.value; }
-  if (erPct && erPctOut) { erPct.value = String(Math.round(ORG_PARAMS.erodePercent * 100)); erPctOut.textContent = erPct.value + "%"; }
-  if (lakePct && lakePctOut) { lakePct.value = String(Math.round(ORG_PARAMS.lakePercent * 100)); lakePctOut.textContent = lakePct.value + "%"; }
-  if (coastMargin && coastMarginOut) { coastMargin.value = String(ORG_PARAMS.coastMargin); coastMarginOut.textContent = coastMargin.value; }
-  if (minLakeDist && minLakeDistOut) { minLakeDist.value = String(ORG_PARAMS.minLakeDistToSea); minLakeDistOut.textContent = minLakeDist.value; }
-  if (maxLakeFlood && maxLakeFloodOut) { maxLakeFlood.value = String(ORG_PARAMS.maxLakeFlood); maxLakeFloodOut.textContent = maxLakeFlood.value; }
+  const genParams = getGenParams();
+  const orgParams = getOrgParams();
+  if (f && fOut) { f.value = String(Math.round(genParams.forest * 100)); fOut.textContent = f.value + "%"; }
+  if (m && mOut) { m.value = String(Math.round(genParams.mountains * 100)); mOut.textContent = m.value + "%"; }
+  if (v && vOut) { v.value = String(Math.round(genParams.villages * 100)); vOut.textContent = v.value + "%"; }
+  if (erIter && erIterOut) { erIter.value = String(orgParams.erodeIterations); erIterOut.textContent = erIter.value; }
+  if (erPct && erPctOut) { erPct.value = String(Math.round(orgParams.erodePercent * 100)); erPctOut.textContent = erPct.value + "%"; }
+  if (lakePct && lakePctOut) { lakePct.value = String(Math.round(orgParams.lakePercent * 100)); lakePctOut.textContent = lakePct.value + "%"; }
+  if (coastMargin && coastMarginOut) { coastMargin.value = String(orgParams.coastMargin); coastMarginOut.textContent = coastMargin.value; }
+  if (minLakeDist && minLakeDistOut) { minLakeDist.value = String(orgParams.minLakeDistToSea); minLakeDistOut.textContent = minLakeDist.value; }
+  if (maxLakeFlood && maxLakeFloodOut) { maxLakeFlood.value = String(orgParams.maxLakeFlood); maxLakeFloodOut.textContent = maxLakeFlood.value; }
 
   // Live labels
   f?.addEventListener("input", () => { if (fOut) fOut.textContent = f.value + "%"; });
@@ -1527,15 +1446,21 @@ function setupWorldgenDebugPanel() {
   };
   const readParams = () => {
     // Update configs from sliders before regen
-    if (f) GEN_PARAMS.forest = Math.max(0, Math.min(1, (parseInt(f.value, 10) || 0) / 100));
-    if (m) GEN_PARAMS.mountains = Math.max(0, Math.min(1, (parseInt(m.value, 10) || 0) / 100));
-    if (v) GEN_PARAMS.villages = Math.max(0, Math.min(1, (parseInt(v.value, 10) || 0) / 100));
-    if (erIter) ORG_PARAMS.erodeIterations = Math.max(0, Math.min(32, parseInt(erIter.value, 10) || 0));
-    if (erPct) ORG_PARAMS.erodePercent = Math.max(0, Math.min(1, (parseInt(erPct.value, 10) || 0) / 100));
-    if (lakePct) ORG_PARAMS.lakePercent = Math.max(0, Math.min(1, (parseInt(lakePct.value, 10) || 0) / 100));
-    if (coastMargin) ORG_PARAMS.coastMargin = Math.max(0, Math.min(6, parseInt(coastMargin.value, 10) || 0));
-    if (minLakeDist) ORG_PARAMS.minLakeDistToSea = Math.max(0, Math.min(20, parseInt(minLakeDist.value, 10) || 0));
-    if (maxLakeFlood) ORG_PARAMS.maxLakeFlood = Math.max(0, Math.min(999, parseInt(maxLakeFlood.value, 10) || 0));
+    const currentGenParams = getGenParams();
+    const currentOrgParams = getOrgParams();
+    
+    if (f) currentGenParams.forest = Math.max(0, Math.min(1, (parseInt(f.value, 10) || 0) / 100));
+    if (m) currentGenParams.mountains = Math.max(0, Math.min(1, (parseInt(m.value, 10) || 0) / 100));
+    if (v) currentGenParams.villages = Math.max(0, Math.min(1, (parseInt(v.value, 10) || 0) / 100));
+    setGenParams(currentGenParams);
+    
+    if (erIter) currentOrgParams.erodeIterations = Math.max(0, Math.min(32, parseInt(erIter.value, 10) || 0));
+    if (erPct) currentOrgParams.erodePercent = Math.max(0, Math.min(1, (parseInt(erPct.value, 10) || 0) / 100));
+    if (lakePct) currentOrgParams.lakePercent = Math.max(0, Math.min(1, (parseInt(lakePct.value, 10) || 0) / 100));
+    if (coastMargin) currentOrgParams.coastMargin = Math.max(0, Math.min(6, parseInt(coastMargin.value, 10) || 0));
+    if (minLakeDist) currentOrgParams.minLakeDistToSea = Math.max(0, Math.min(20, parseInt(minLakeDist.value, 10) || 0));
+    if (maxLakeFlood) currentOrgParams.maxLakeFlood = Math.max(0, Math.min(999, parseInt(maxLakeFlood.value, 10) || 0));
+    setOrgParams(currentOrgParams);
   };
   const doRegen = async (seed: number, size?: any) => {
     readParams();
@@ -1627,10 +1552,10 @@ setupWorldgenDebugPanel();
     return RN?.get?.() || "debug";
   },
   // Toggle simple island generation for coast autotiling validation
-  setSimpleIslandOnly: (v: boolean) => { SIMPLE_ISLAND_ONLY = !!v; },
-  getSimpleIslandOnly: () => SIMPLE_ISLAND_ONLY,
-  setCreateMode: (v: boolean) => { CREATE_MODE = !!v; },
-  getCreateMode: () => CREATE_MODE,
+  setSimpleIslandOnly: (v: boolean) => { worldGenService.setSimpleIslandOnly(!!v); },
+  getSimpleIslandOnly: () => worldGenService.getSimpleIslandOnly(),
+  setCreateMode: (v: boolean) => { worldGenService.setCreateMode(!!v); },
+  getCreateMode: () => worldGenService.getCreateMode(),
 };
 
 // ===== Height System (Flattened) =====
@@ -1642,20 +1567,7 @@ setupWorldgenDebugPanel();
 // - MOUNTAIN: 4
 // - All others default to 1 if land (non-water)
 function computeHeightMap() {
-  for (let y = 0; y < state.size.h; y++)
-    for (let x = 0; x < state.size.w; x++) {
-      const c = state.map[idx(x, y)] as any;
-      if (!c) continue;
-      const t = rt(c);
-      let h = 1; // default land height
-      if (t === T.WATER) h = 0;
-      else if (t === T.GRASS) h = 1;
-      else if (t === T.FOREST) h = 2;
-      else if (t === T.TOWN || (t && HOUSELINE.includes(t as any))) h = 2;
-      else if (t === T.MOUNTAIN) h = 4;
-      else h = 1;
-      c.h = h;
-    }
+  worldGenService.computeHeightMap(state);
 }
 
 function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
@@ -1667,14 +1579,7 @@ function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
 
 // Create a deterministic sub-RNG for specific operations
 function createSubRng(baseSeed: number, operation: string, x?: number, y?: number): () => number {
-  // Create a unique seed for this specific operation and location
-  let subSeed = baseSeed;
-  for (let i = 0; i < operation.length; i++) {
-    subSeed = (subSeed * 31 + operation.charCodeAt(i)) >>> 0;
-  }
-  if (x !== undefined) subSeed = (subSeed * 73856093 + x) >>> 0;
-  if (y !== undefined) subSeed = (subSeed * 19349663 + y) >>> 0;
-  return rng32(subSeed);
+  return worldGenService.createSubRng(baseSeed, operation, x, y);
 }
 
 // Updated function that doesn't mutate global seed
