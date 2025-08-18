@@ -4,7 +4,6 @@
 import type { Cell, State, UpgradeSpec } from "../types";
 import { getCoastOverlaysAt } from "../autotile";
 import { generateOrganicIslandHeight, type OrganicIslandParams } from "../worldgen/island";
-import { IslandWorldgenPlugin } from "../plugins/worldgen/islands/IslandWorldgen";
 
 // ===== DOM helpers =====
 const $ = (id: string) => document.getElementById(id)!;
@@ -319,20 +318,19 @@ function initializeRngStreams(baseSeed: number) {
   state.rng = gameplayRng;
 }
 
-// ===== World Generation =====
-// Create Mode: sculpt islands directly. Start with all water; click selects a tile; +/- grows/erodes land.
-// Default OFF to restore RNG-based layered world generation.
-let CREATE_MODE = false;
-// Legacy simple toggle kept for reference; when CREATE_MODE is enabled, this is implied
-let SIMPLE_ISLAND_ONLY = false;
+// ===== World Generation Bridge =====
+// Bridge to new worldgen plugin system
+import { GameEngine } from './core/Engine';
+import { IslandWorldgenPlugin } from '../plugins/worldgen/islands/IslandWorldgen';
 
-// Generation parameters (fractions 0..1)
+// Legacy variables for compatibility
+let CREATE_MODE = false;
+let SIMPLE_ISLAND_ONLY = false;
 let GEN_PARAMS = {
   forest: 0.35,   // ~35% of land becomes forest
   mountains: 0.12, // ~12% of land becomes mountains (clustered)
   villages: 0.08, // ~8% of land becomes villages
 };
-// Organic island shaping parameters (debug-adjustable)
 let ORG_PARAMS: OrganicIslandParams = {
   coastMargin: 1,
   baseRadiusFrac: 0.5,
@@ -343,76 +341,54 @@ let ORG_PARAMS: OrganicIslandParams = {
   maxLakeFlood: 24,
 };
 
-// Initialize worldgen plugin for use with legacy generate function
-async function initWorldgenPlugin() {
-  // Create a minimal engine context for the plugin
-  const engineContext = {
-    rng: {
-      next: () => worldGenRng!(),
-      seed: (newSeed: number) => {
-        // Re-initialize the worldgen RNG with new seed
-        worldGenRng = rng32(newSeed);
-        generationSeed = newSeed;
-      }
-    },
-    events: {
-      publish: (event: string, data: any) => {
-        console.log(`Worldgen event: ${event}`, data);
-      }
-    },
-    state: {
-      get: () => ({ 
-        map: {
-          cells: state.map,  // Plugin expects cells array
-          width: state.size.w,
-          height: state.size.h
-        }, 
-        size: state.size, 
-        seed: state.seed 
-      }),
-      set: (newState: any) => {
-        // If the plugin modified map.cells, copy it back to legacy state.map
-        if (newState.map && newState.map.cells) {
-          state.map = newState.map.cells;
-        }
-        // Copy other properties except 'map' which we handled above
-        const { map, ...otherProps } = newState;
-        Object.assign(state, otherProps);
-      }
-    },
-    services: {
-      provide: (id: string, service: any) => {
-        console.log(`Service "${id}" provided`);
-      },
-      get: (id: string) => {
-        throw new Error(`Service "${id}" not available in legacy mode`);
-      }
-    },
-    logger: {
-      info: (msg: string) => console.log(`[Worldgen] ${msg}`),
-      warn: (msg: string) => console.warn(`[Worldgen] ${msg}`),
-      error: (msg: string) => console.error(`[Worldgen] ${msg}`)
-    }
-  };
+// Global engine instance for worldgen
+let worldgenEngine: GameEngine | null = null;
+let worldgenPlugin: IslandWorldgenPlugin | null = null;
 
-  const plugin = new IslandWorldgenPlugin();
-  await plugin.init(engineContext as any);
-  plugin.start(engineContext as any);
-  return plugin;
+// Initialize plugin engine if needed
+async function initWorldgenPlugin(): Promise<void> {
+  if (!worldgenEngine) {
+    worldgenPlugin = new IslandWorldgenPlugin();
+    worldgenEngine = new GameEngine({
+      plugins: [worldgenPlugin],
+      seed: Date.now()
+    });
+    await worldgenEngine.init();
+    worldgenEngine.start();
+  }
 }
 
+// Bridge function to use new worldgen plugin
 async function generate(
   seed = Date.now(),
   size: "small" | "medium" | "large" = "medium"
 ) {
+  // Initialize plugin engine
+  await initWorldgenPlugin();
+  
+  if (!worldgenPlugin) {
+    throw new Error('Worldgen plugin not initialized');
+  }
+
+  // Initialize RNG streams for compatibility
+  initializeRngStreams(seed);
+  
+  // Use the new plugin to generate the world
+  const result = await worldgenPlugin.generateWorld(seed, size, {
+    forest: GEN_PARAMS.forest,
+    mountains: GEN_PARAMS.mountains,
+    villages: GEN_PARAMS.villages
+  });
+
+  // Get the generated state from the plugin's engine
+  const pluginState = worldgenEngine!.getContext().state.get() as any;
+  
+  // Copy the generated map to our legacy state
   const sizes: Record<string, { w: number; h: number }> = {
     small: { w: 16, h: 12 },
     medium: { w: 20, h: 16 },
     large: { w: 30, h: 20 },
   };
-  
-  // Initialize all RNG streams
-  initializeRngStreams(seed);
   
   Object.assign(state.size, sizes[size]);
   Object.assign(state, {
@@ -425,38 +401,18 @@ async function generate(
     people: 3,
     actions: 3,
     sel: null,
+    map: pluginState.map.cells.slice() // Copy the generated cells
   });
-  // 1) Base map: initialize water
-  state.map = Array(state.size.w * state.size.h)
-    .fill(0)
-    .map(() => cell(T.WATER));
-  const cx = (state.size.w - 1) / 2,
-    cy = (state.size.h - 1) / 2;
 
+  // Handle CREATE_MODE for legacy compatibility
   if (CREATE_MODE) {
-    // Reveal all for editing
     each((x, y, c: any) => { c.disc = true; c.h = 0; });
-  } else {
-    // Use worldgen plugin for generation
-    const worldgenPlugin = await initWorldgenPlugin();
-    
-    // Generate world using plugin (modifies state.map in place)
-    await worldgenPlugin.generateWorld(
-      state.seed,
-      size,
-      {
-        mountains: GEN_PARAMS.mountains,
-        forest: GEN_PARAMS.forest,
-        villages: GEN_PARAMS.villages
-      }
-    );
   }
-  // Compute initial heights based on terrain
-  computeHeightMap();
-  // Update seed display for UI  
+
+  // Update seed display for UI
   updateSeedDisplay();
 
-  // Load tile atlas for enhanced rendering - wait for it to load
+  // Load tile atlas for enhanced rendering
   try {
     await loadTileAtlas();
     console.log("Tile atlas loaded successfully");
@@ -470,6 +426,33 @@ async function generate(
   $("seedOut").textContent = String(originalSeed);
   $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
+
+// Legacy worldgen helper functions - now just used for CREATE_MODE compatibility  
+function computeHeightMap() {
+  // Legacy function - heights are now handled in worldgen plugin, but needed for compatibility
+  for (let y = 0; y < state.size.h; y++)
+    for (let x = 0; x < state.size.w; x++) {
+      const c = state.map[idx(x, y)] as any;
+      if (!c) continue;
+      const t = rt(c);
+      let h = 1; // default land height
+      if (t === T.WATER) h = 0;
+      else if (t === T.GRASS) h = 1;
+      else if (t === T.FOREST) h = 2;
+      else if (t === T.TOWN || (t && HOUSELINE.includes(t))) h = 2;
+      else if (t === T.MOUNTAIN) h = 4;
+      else h = 1;
+      c.h = h;
+    }
+}
+
+function updateSeedDisplay() {
+  const mapHash = computeMapStateHash();
+  const so = document.getElementById("seedOut");
+  if (so) so.textContent = `${originalSeed} (state: ${mapHash.toString(16)})`;
+}
+
+// Legacy helper functions still used by some parts of the code
 function reveal(cx: number, cy: number, r: number) {
   for (let y = cy - r; y <= cy + r; y++)
     for (let x = cx - r; x <= cx + r; x++) {
@@ -478,6 +461,7 @@ function reveal(cx: number, cy: number, r: number) {
       if (c) c.disc = true;
     }
 }
+
 function ensureStartResources(sx: number, sy: number) {
   const nbs: Array<{ i: number; cell: any; x: number; y: number }> = [];
   for (const d of DIRS) {
@@ -504,6 +488,85 @@ function ensureStartResources(sx: number, sy: number) {
     )[0]!;
     (state.map[pick.i] as any).type = T.GRASS;
   }
+}
+
+// ===== Rendering (fallback if renderer missing) =====
+
+
+      // Small cluster growth
+      const q: Array<[number,number]> = [[pick.x, pick.y]];
+      let budget = 4; // cap cluster size
+      while (q.length && placedM < targetM && budget-- > 0) {
+        const [cx1, cy1] = q.shift()!;
+        for (const d of DIRS) {
+          if (worldGenRng!() < 0.35) {
+            const nx = cx1 + d[0], ny = cy1 + d[1];
+            if (!inBounds(nx, ny)) continue;
+            const ok = markMountain(nx, ny);
+            if (ok) q.push([nx, ny]);
+            if (placedM >= targetM) break;
+          }
+        }
+      }
+    }
+
+    // Layer 3b: forests based on density (don’t overwrite hut or mountains)
+    const targetF = Math.max(0, Math.floor(land.length * Math.max(0, Math.min(1, GEN_PARAMS.forest))));
+    const candidatesF = land
+      .filter(p => { const c = state.map[p.i] as any; return c.type === T.GRASS; })
+      .sort(() => (worldGenRng!() < 0.5 ? -1 : 1));
+    for (let i = 0; i < candidatesF.length && i < targetF; i++) {
+      const pick = candidatesF[i];
+      if (!pick) break;
+      (state.map[pick.i] as any).type = T.FOREST;
+    }
+
+    // Layer 3c: villages (towns) based on density; place on grass or forest, avoid adjacency with other towns
+    const targetV = Math.max(0, Math.floor(land.length * Math.max(0, Math.min(1, GEN_PARAMS.villages))));
+    let placedV = 0;
+    const canPlaceTown = (x:number,y:number) => {
+      for (const d of DIRS) {
+        const nx=x+d[0], ny=y+d[1];
+        if (!inBounds(nx,ny)) continue;
+        const n = state.map[idx(nx,ny)] as any;
+        if (n && n.type === T.TOWN) return false;
+      }
+      return true;
+    };
+    const candV = land.filter(p => { const c = state.map[p.i] as any; return (c.type === T.GRASS || c.type === T.FOREST) && c.type !== T.HUT; })
+                      .sort(() => (worldGenRng!() < 0.5 ? -1 : 1));
+    for (const p of candV) {
+      if (placedV >= targetV) break;
+      if (!canPlaceTown(p.x, p.y)) continue;
+      const c = state.map[p.i] as any;
+      if (c.type === T.GRASS || c.type === T.FOREST) {
+        c.type = T.TOWN;
+        placedV++;
+      }
+    }
+
+    // Ensure starter resources adjacent to hut and reveal vicinity
+    ensureStartResources(start.x, start.y);
+    reveal(start.x, start.y, 1);
+  }
+  // Compute initial heights based on terrain
+  computeHeightMap();
+  // Update seed display for UI
+  updateSeedDisplay();
+
+  // Load tile atlas for enhanced rendering - wait for it to load
+  try {
+    await loadTileAtlas();
+    console.log("Tile atlas loaded successfully");
+  } catch (e) {
+    console.warn("Could not load tile atlas:", e);
+  }
+
+  resize();
+  hud();
+  draw();
+  $("seedOut").textContent = String(originalSeed);
+  $("mapOut").textContent = `${state.size.w}×${state.size.h}`;
 }
 
 // ===== Rendering (fallback if renderer missing) =====
@@ -1742,22 +1805,7 @@ setupWorldgenDebugPanel();
 // - HUT/HOUSE/TOWN: 2
 // - MOUNTAIN: 4
 // - All others default to 1 if land (non-water)
-function computeHeightMap() {
-  for (let y = 0; y < state.size.h; y++)
-    for (let x = 0; x < state.size.w; x++) {
-      const c = state.map[idx(x, y)] as any;
-      if (!c) continue;
-      const t = rt(c);
-      let h = 1; // default land height
-      if (t === T.WATER) h = 0;
-      else if (t === T.GRASS) h = 1;
-      else if (t === T.FOREST) h = 2;
-      else if (t === T.TOWN || (t && HOUSELINE.includes(t))) h = 2;
-      else if (t === T.MOUNTAIN) h = 4;
-      else h = 1;
-      c.h = h;
-    }
-}
+// computeHeightMap moved to worldgen plugin - using legacy function reference
 
 function adjustHeightByIndex(i: number, delta: number, propagate: boolean) {
   if (i < 0 || i >= state.map.length) return;
@@ -1947,13 +1995,6 @@ function computeMapStateHash() {
   h = Math.imul(h, 0xc2b2ae35) >>> 0;
   h ^= h >>> 16;
   return h >>> 0;
-}
-
-// Update the displayed seed for UI purposes without affecting RNG
-function updateSeedDisplay() {
-  const mapHash = computeMapStateHash();
-  const so = document.getElementById("seedOut");
-  if (so) so.textContent = `${originalSeed} (state: ${mapHash.toString(16)})`;
 }
 
 // Apply a height value and convert between water and land at thresholds

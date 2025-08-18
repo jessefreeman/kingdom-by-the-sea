@@ -45,9 +45,9 @@ Deliverables:
 
 ## Phase 3 — Worldgen Plugin
 
-- ☐ Extract `worldgen/island.ts` into plugin
-- ☐ Emit `worldgen.*` events (start/progress/done)
-- ☐ Deterministic output from seed; add snapshot test
+- ✅ Extract `worldgen/island.ts` into plugin
+- ✅ Emit `worldgen.*` events (start/progress/done)
+- ✅ Deterministic output from seed; add snapshot test
 
 Deliverables:
 - `frontend/src/plugins/worldgen/islands/IslandWorldgen.ts`

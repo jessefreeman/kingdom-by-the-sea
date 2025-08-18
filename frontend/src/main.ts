@@ -7,6 +7,7 @@ import { setRenderer, draw, resize } from "./game";
 import { testRNGDeterminism } from "./tests/rng.determinism.tests";
 import { testEngineBasics } from "./tests/engine.basic.tests";
 import { testRendererPlugins } from "./tests/renderer.plugins.tests";
+import { testWorldgenPlugin } from "./tests/worldgen.plugins.tests";
 
 // Wire up renderer switching for dev
 (window as any).KBTS_TS = { setRenderer, draw, resize };
@@ -16,6 +17,7 @@ import { testRendererPlugins } from "./tests/renderer.plugins.tests";
   testRNGDeterminism,
   testEngineBasics,
   testRendererPlugins,
+  testWorldgenPlugin,
 };
 
 window.addEventListener("resize", () => resize());
@@ -24,3 +26,4 @@ window.addEventListener("resize", () => resize());
 setRenderer("three");
 
 console.log('🚀 KBTS loaded. Engine tests available via KBTS_ENGINE_TESTS');
+console.log('📦 New worldgen plugin test: KBTS_ENGINE_TESTS.testWorldgenPlugin()');
