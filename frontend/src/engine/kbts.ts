@@ -525,27 +525,8 @@ function erodeIslandAt(cx: number, cy: number) {
 }
 
 // ===== Rules / UI =====
-const afford = (c: any) =>
-  (!("G" in c) || state.gold >= c.G) &&
-  (!("W" in c) || state.wood >= c.W) &&
-  (!("P" in c) || state.people >= c.P) &&
-  (!("F" in c) || state.food >= c.F);
-const pay = (c: any) => {
-  if (c.G) state.gold -= c.G;
-  if (c.W) state.wood -= c.W;
-  if (c.F) state.food -= c.F;
-};
-const whyNo = (spec: any, cell: any) => {
-  const r: string[] = [];
-  if (cell.upg) r.push("already upgrading");
-  if (state.actions <= 0) r.push("no actions left");
-  const cc = spec.cost || {};
-  if (cc.G && state.gold < cc.G) r.push("need G:" + cc.G);
-  if (cc.W && state.wood < cc.W) r.push("need W:" + cc.W);
-  if (cc.F && state.food < cc.F) r.push("need F:" + cc.F);
-  if (cc.P && state.people < cc.P) r.push("need P:" + cc.P);
-  return r.join(", ");
-};
+const afford = (c: any) => coreRulesPlugin.afford(c);
+const whyNo = (spec: any, cell: any) => coreRulesPlugin.whyNo(spec, cell);
 const fmtCost = (c: any) =>
   Object.entries(c || {})
     .filter((p) => p[0] !== "Y")
@@ -618,40 +599,13 @@ function isCoast(x: number, y: number) {
     return inBounds(nx, ny) && rt(state.map[idx(nx, ny)] as any) !== T.WATER;
   });
 }
-const countType = (t: string) => {
-  let n = 0;
-  each((x, y, c: any) => {
-    if (c && rt(c) === t) n++;
-  });
-  return n;
-};
-const uniqueAvailable = (to: string) =>
-  !(to === T.PALACE && countType(T.PALACE) >= 1) &&
-  !(to === T.CASTLE && countType(T.CASTLE) >= 1);
+const countType = (t: string) => coreRulesPlugin.countType(t);
+const uniqueAvailable = (to: string) => coreRulesPlugin.uniqueAvailable(to);
 function bufferOK(x: number, y: number, from: string, to: string) {
   if (!houseNearbyLocal(x, y)) return true;
   if (to === T.FARM) return true;
   if (from === T.FOREST && to === T.GRASS) return true;
   return false;
-}
-
-function applyAdjacencyBonuses(d: any) {
-  each((x, y, c: any) => {
-    if (
-      [T.HOUSE, T.MANSION, T.PALACE, T.CASTLE].includes(c.type) &&
-      hasAdjType(x, y, T.FARM)
-    )
-      d.G += 1;
-    if (c.type === T.DOCK) {
-      if (hasAdjType(x, y, T.FARM)) d.F += 1;
-      if (
-        [T.HOUSE, T.MANSION, T.PALACE, T.CASTLE].some((t) =>
-          hasAdjType(x, y, t)
-        )
-      )
-        d.G += 1;
-    }
-  });
 }
 
 // ===== Workforce/Farm synergy =====
@@ -805,27 +759,11 @@ function openPanel(x: number, y: number) {
 }
 
 function startUpgrade(x: number, y: number, c: any, s: UpgradeSpec) {
-  if (
-    !s ||
-    c.upg ||
-    !afford(s.cost) ||
-    state.actions <= 0 ||
-    !uniqueAvailable(s.to as any) ||
-    (s.pre && !s.pre(x, y)) ||
-    !bufferOK(x, y, c.type, s.to as any)
-  )
-    return;
-  pay(s.cost);
-  state.actions--;
-  const total = s.duration || 1;
-  c.upg = { to: s.to as any, left: total, spec: s, total, prog: 0 } as any;
-  if (total > 1) {
-    c.upg.left--;
-    c.upg.prog = 1;
+  if (coreRulesPlugin.canUpgrade(x, y, s)) {
+    coreRulesPlugin.startUpgrade(x, y, s);
+    hud();
+    draw();
   }
-  reveal(x, y, 1);
-  hud();
-  draw();
 }
 
 // ===== Turn / Events =====
@@ -1136,7 +1074,6 @@ setupWorldgenDebugPanel();
   explore,
   isCoast,
   startUpgrade,
-  applyAdjacencyBonuses,
   uniqueAvailable,
   noHouseNearby: noHouseNearbyLocal,
   houseNearby: houseNearbyLocal,
