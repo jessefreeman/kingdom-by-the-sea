@@ -10,3 +10,6 @@ export { ConsoleLogger } from './core/Logger';
 
 export * from './contracts/plugins';
 export * from './contracts/types';
+
+// Export new systems
+export * from './systems';
