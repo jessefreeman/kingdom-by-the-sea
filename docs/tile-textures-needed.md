@@ -1,52 +1,132 @@
-# Kingdom by the Sea - Tile Texture System Implementation
+# Kingdom by the Sea - Tile Texture System
 
-This document outlines the tile texture system using individual texture files that are preloaded and combined into a runtime atlas.
+This document describes the current tile texture system implementation using runtime atlas generation from individual texture files.
 
-## System Overview
+## Current Implementation Status ✅
 
-**Architecture**: Single existing texture → JSON configuration → Runtime atlas generation
-- **Development**: Using existing 128x128 PNG with letter placeholders
-- **Runtime**: Single texture atlas for optimal performance  
-- **Configuration**: JSON file maps tile types to atlas positions
+The tile texture system is **fully implemented and operational** with the following features:
 
-## Current Implementation Status
+### ✅ **System Architecture**
+- **Runtime Atlas Generation**: Creates optimized texture atlas from individual PNG files
+- **JSON Configuration**: `assets/tiles/tile-config.json` maps tile types to atlas positions  
+- **Dual Texture Sources**: Combines `map-tiles.png` and `auto-tiles-water.png`
+- **Performance Optimized**: Single atlas lookup for all rendering operations
 
-✅ **JSON Configuration**: Created `assets/tiles/tile-config.json` with tile mappings
-✅ **Preloader System**: Built `src/tileAtlasPreloader.ts` for runtime atlas generation  
-✅ **Updated TileAtlas**: Modified existing `src/tileAtlas.ts` to use new system
-✅ **Integration**: System works with existing Three.js and debug renderers
-✅ **Debug Tools**: Added atlas visualization and info logging
+### ✅ **Implementation Files**
+- `src/engine/services/tileAtlas.ts` - Core atlas management and tile lookup
+- `src/engine/services/tileAtlasPreloader.ts` - Runtime atlas generation from individual textures
+- `assets/tiles/tile-config.json` - Tile type to texture coordinate mapping
 
-**Debug Controls**:
-- Press `A` key: Show visual atlas debug overlay (6x scale)
-- Press `Shift+A`: Log atlas info to console
-- Press `F` key: Toggle fog of war
+### ✅ **Integration Status**
+- **Three.js Renderer**: Full integration with 3D heightmap visualization
+- **Canvas2D Renderer**: Full integration with 2D top-down view
+- **Debug Tools**: Atlas visualization and performance monitoring
 
-**Current Tile Mapping** (using existing map-tiles.png + auto-tiles-water.png):
-- Column 0: Burnt land (black)
-- Column 1: Water (from auto-tiles-water.png tile 0)
-- Column 2: Coast (from auto-tiles-water.png tile 1) 
-- Column 3: Grass (G letter)
-- Column 4: Forest (T letter)
-- Column 5: Mountain (M letter)
-- Column 6: Building (H letter)
-- Column 7: Farm (F letter)
+### ✅ **Debug Controls**
+Current debug functionality accessible in-game:
+- **`A` key**: Toggle visual atlas debug overlay (6x scale)
+- **`Shift+A`**: Log detailed atlas info to browser console
+- **`F` key**: Toggle fog of war for visibility testing
 
-**Next Steps**: Replace letter placeholders with actual art assets as individual PNG files
+## Texture Atlas Layout
 
-## Core Terrain Tiles (8 columns)
+The system currently uses an **8×8 grid** (64 total positions) with the following mapping:
 
-### Column 0: Burnt/Destroyed
-- [ ] **Burnt Land** - Charred/blackened ground (from fire events)
+### Current Tile Mapping
 
-### Column 1: Deep Water
-- [ ] **Deep Water** - Dark blue deep ocean water
+The atlas combines tiles from multiple source images:
 
-### Column 2: Coastal Water  
-- [ ] **Coastal Water** - Lighter blue coastal water (for dock placement)
+#### **Primary Terrain** (from `map-tiles.png`)
+- **Row 0, Col 0**: Burnt land (black placeholder)
+- **Row 0, Col 3**: Grass ('G' letter placeholder)  
+- **Row 0, Col 4**: Forest ('T' letter placeholder)
+- **Row 0, Col 5**: Mountain ('M' letter placeholder)
+- **Row 0, Col 6**: Building ('H' letter placeholder)
+- **Row 0, Col 7**: Farm ('F' letter placeholder)
+- **Row 1, Col 0**: Rubble (black placeholder)
 
-### Column 3: Grass
-- [ ] **Grass** - Green grassland (base buildable terrain)
+#### **Coastline Tiles** (from `coast_tilesheet.png`)
+Auto-tiling system with 16 total coastline pieces:
+- **Row 0, Cols 0-7**: Water, Land, Edges (N,E,S,W), Corners (NW,NE)
+- **Row 1, Cols 0-5**: Corners (SW,SE), Caps (NW,NE,SW,SE)
+
+## Technical Details
+
+### Atlas Generation Process
+1. **Load Source Images**: `map-tiles.png` + `coast_tilesheet.png`
+2. **Parse Configuration**: `tile-config.json` defines tile positions
+3. **Generate Runtime Atlas**: 128×128px canvas with 8×8 grid (16px tiles)
+4. **Optimize Rendering**: Single atlas lookup for all tile operations
+
+### Performance Benefits
+- **Single Texture**: Eliminates multiple texture binding calls
+- **Batch Rendering**: All tiles rendered in single draw call
+- **Memory Efficient**: One atlas vs. multiple individual textures
+- **Cache Friendly**: GPU texture cache optimized for single atlas
+
+### Integration Points
+
+#### Three.js Renderer
+```typescript
+// Texture atlas usage in Three.js
+const atlas = tileAtlasService.getAtlas();
+const material = new THREE.MeshBasicMaterial({ map: atlas });
+const uv = tileAtlasService.getUV(tileType); // UV coordinates for tile
+```
+
+#### Canvas2D Renderer  
+```typescript
+// Direct canvas usage
+const atlas = tileAtlasService.getAtlasCanvas();
+const coords = tileAtlasService.getCoords(tileType);
+ctx.drawImage(atlas, coords.x, coords.y, 16, 16, x, y, tileSize, tileSize);
+```
+
+## Future Expansion
+
+### Planned Art Assets
+The current system uses placeholder graphics and is ready for art asset replacement:
+
+#### **Core Terrain Tiles** (Priority 1)
+- [ ] **Water**: Deep blue ocean water texture
+- [ ] **Grass**: Green grassland with varied texture
+- [ ] **Forest**: Dense woodland canopy view
+- [ ] **Mountain**: Rocky/snow-capped peaks
+- [ ] **Burnt**: Charred, blackened ground
+
+#### **Structure Overlays** (Priority 2)  
+- [ ] **Hut**: Small wooden dwelling
+- [ ] **House**: Medium stone/wood house
+- [ ] **Mansion**: Large multi-story building
+- [ ] **Palace**: Ornate government building
+- [ ] **Castle**: Fortified stronghold
+- [ ] **Farm**: Agricultural fields with crops
+- [ ] **Mine**: Mountain mining operation
+- [ ] **Dock**: Coastal port structure
+
+#### **Special Effects** (Priority 3)
+- [ ] **Selection Border**: Animated highlight ring
+- [ ] **Farm Synergy**: Glow effect for adjacent farms
+- [ ] **Construction**: Building progress indicators
+- [ ] **Worker**: Animated worker sprites
+
+### Expansion Process
+1. Create 16×16px PNG files for each tile type
+2. Update `tile-config.json` with new file paths
+3. Atlas automatically rebuilds on next game load
+4. No code changes required for new art assets
+
+## Coastline Auto-Tiling System
+
+The engine includes a sophisticated auto-tiling system for seamless water/land transitions. See `auto-tiling-specification.md` for detailed technical documentation.
+
+### Features
+- **Binary Grid Processing**: Operates on 1=Land, 0=Water data
+- **16-Tile Coastline Set**: Complete edge, corner, and cap pieces
+- **Real-time Generation**: Calculates appropriate tiles based on neighbors
+- **Gap Prevention**: Diagonal caps fill pinhole gaps in coastlines
+
+This system ensures that any procedurally generated or hand-edited terrain automatically displays smooth, natural-looking coastlines without manual tile placement.
 
 ### Column 4: Forest
 - [ ] **Forest** - Dense trees/woodland (produces wood when cleared)

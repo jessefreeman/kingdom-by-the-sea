@@ -1,103 +1,438 @@
-# 4X Engine Architecture and Refactor Plan
+# Kingdom by the Sea - Game Engine Architecture
 
-This document proposes how to refactor the current game into a modular 4X engine with a small Core and a first-class Plugin system. It targets clean separation of concerns, testability, determinism, and future extensibility (2D/3D renderers, rulesets, worldgen, AI, UI, persistence).
+This document describes the current modular 4X game engine architecture implemented in Kingdom by the Sea. The engine features a small Core with a robust Plugin system, providing clean separation of concerns, testability, determinism, and extensibility.
 
-## Goals
+## Architecture Overview
 
-- Separate the monolithic game file into cohesive modules with clear contracts.
-- Establish a Core Engine that owns loop, events, services, and plugin lifecycle.
-- Support multiple renderers (2D Canvas, 3D/Three) as swappable plugins.
-- Encapsulate game rules, worldgen, AI, audio, input, and persistence as plugins.
-- Make simulation deterministic (seeded RNG) for replays and future multiplayer.
-- Enable modding via plugin manifests and stable, versioned APIs.
+The engine has been successfully refactored from a monolithic structure into a modular system that supports:
 
-Non-goals (initial phase): networking, ECS overhaul (optional later), complex tooling.
+- ✅ **Modular Core Engine** - Manages game loop, events, services, and plugin lifecycle
+- ✅ **Multiple Renderer Support** - Swappable 2D Canvas and 3D Three.js renderers
+- ✅ **Plugin-based Architecture** - Encapsulated worldgen, rendering, and game systems
+- ✅ **Deterministic Simulation** - Seeded RNG for reproducible gameplay
+- ✅ **Event-driven Communication** - Decoupled plugin interactions
 
-## High-level Architecture
+## Current Implementation Status
 
-- Core (engine runtime)
-  - Game loop (fixed-tick simulation + render interpolation)
-  - Event bus (pub/sub) and command dispatch
-  - Service registry (DI-lite)
-  - State store (serializable) and snapshot API
-  - Scheduler/timers (tick-based)
-  - Plugin lifecycle and capability gating
-- Plugins (opt-in capabilities)
-  - Renderer plugins (2D Canvas / 3D Three)
-  - Game rules / simulation plugins (economy, combat, diplomacy)
-  - Worldgen plugins (islands, maps, biomes)
-  - Input plugins (keyboard/mouse, gestures)
-  - UI/HUD plugins (panels, overlays)
-  - Audio plugins
-  - Persistence plugins (save/load, codecs)
-  - Utility services (pathfinding, autotiling, tile atlas, RNG)
+### ✅ Core Engine Components (Implemented)
 
-Data flows through Engine events and explicit service contracts. Plugins communicate via events and shared services, not direct imports, to reduce coupling.
+Located in `frontend/src/engine/core/`:
 
-## Core Engine Responsibilities
+- **`Engine.ts`** - Main game engine with fixed-timestep loop (30Hz simulation, interpolated rendering)
+- **`EventBus.ts`** - Pub/sub event system for decoupled plugin communication
+- **`Services.ts`** - Service locator for dependency injection between plugins
+- **`StateStore.ts`** - Serializable state management with snapshots and change tracking
+- **`Time.ts`** - Fixed-timestep timing service with tick counting and delta calculations
+- **`RNG.ts`** - Deterministic seeded random number generator using xorshift32
+- **`Logger.ts`** - Leveled logging service (debug/info/warn/error)
 
-- Initialize/configure services and plugins from a manifest
-- Advance a fixed-step simulation clock (e.g., 30–60 Hz), independent render
-- Provide deterministic RNG (seeded) and time services
-- Manage a serializable state tree with undo/redo and snapshot support
-- Dispatch input events, route commands, and enforce capability rules
-- Expose a simple diagnostics/logging interface and hooks for profiling
+### ✅ Plugin System (Implemented)
 
-### Core Types (contract sketch)
+Located in `frontend/src/plugins/`:
 
-```ts
-export interface EngineOptions {
-  seed?: string | number;
-  timestepMs?: number; // default 33.333 (30 Hz) or 16.667 (60 Hz)
-  plugins: EnginePlugin[];
-  services?: Record<string, unknown>; // prebound services
-  config?: Record<string, unknown>;
+#### Core Plugins
+- **`core/`** - Foundation plugins for engine coordination and API exposure
+  - `ServiceCoordinationPlugin.ts` - Manages inter-plugin service dependencies
+  - `GlobalAPIPlugin.ts` - Exposes engine APIs to global scope for debugging
+  - `PluginCoordinationPlugin.ts` - Coordinates plugin lifecycle management
+
+#### Renderer Plugins
+- **`renderer/canvas2d/Canvas2DRenderer.ts`** - Lightweight 2D Canvas renderer
+- **`renderer/three/ThreeRenderer.ts`** - Advanced 3D renderer using Three.js
+- Both renderers support runtime switching and maintain identical game state display
+
+#### Worldgen Plugins
+- **`worldgen/islands/IslandWorldgen.ts`** - Procedural island generation with configurable parameters
+- Supports multiple world sizes (small 16x12, medium 20x16, large 30x20)
+- Deterministic generation using seeded RNG
+
+#### Business Logic Plugins
+- **`business/GameBusinessLogicPlugin.ts`** - Core game rules and simulation logic
+- **`rules/core/CoreRulesPlugin.ts`** - Fundamental game mechanics and validation
+
+#### Utility Plugins
+- **`ui/GameUIPlugin.ts`** - User interface management
+- **`ui/GameHUDPlugin.ts`** - Heads-up display and overlays
+- **`input/GameInputPlugin.ts`** - Input handling and event routing
+
+### ✅ Services and Utilities
+
+Located in `frontend/src/engine/services/` and `frontend/src/engine/utilities/`:
+
+- **`tileAtlas.ts`** - Tile texture atlas management for efficient rendering
+- **`tileAtlasPreloader.ts`** - Runtime atlas generation from individual textures
+- **`autotile.ts`** - Coastline auto-tiling algorithms for seamless water/land transitions
+- **`WorldGenService.ts`** - World generation coordination service
+- **`TerrainEditingService.ts`** - Terrain modification and height system management
+
+## Architecture Deep Dive
+
+### Core Engine Responsibilities
+
+The `GameEngine` class coordinates the entire system:
+
+- **Plugin Lifecycle** - Initialize, start, update, and dispose plugins in proper order
+- **Fixed-Timestep Simulation** - 30Hz game logic updates independent of rendering framerate
+- **Event Coordination** - Route events between plugins via the central event bus
+- **Service Management** - Provide dependency injection for shared services
+- **State Persistence** - Manage serializable game state with snapshot support
+- **Deterministic Timing** - Ensure reproducible simulation via seeded RNG and fixed timesteps
+
+### Plugin Contract
+
+All plugins implement the `EnginePlugin` interface:
+
+```typescript
+export interface EnginePlugin {
+  id: string;                                    // unique identifier, e.g., "kbts.worldgen.v1"
+  version: string;                               // semantic version
+  requires?: string[];                           // dependent plugin/service IDs
+  provides?: string[];                           // services this plugin exposes
+  
+  init(ctx: EngineContext): void | Promise<void>; // setup phase
+  start?(ctx: EngineContext): void;             // engine started
+  update?(ctx: EngineContext, dt: number): void; // fixed-tick simulation
+  render?(ctx: EngineContext, alpha: number): void; // interpolated rendering
+  stop?(ctx: EngineContext): void;              // engine stopped  
+  dispose?(ctx: EngineContext): void;           // cleanup phase
 }
 
 export interface EngineContext {
-  engine: Engine; // start/pause/stop, getState, setState, snapshots
-  events: EventBus; // publish/subscribe
-  services: ServiceLocator; // get/provide services
-  logger: Logger;
-  rng: RNG; // deterministic, seedable
-  time: Time; // now, tick, delta
-  state: StateStore<GameState>; // serializable
-  config: Record<string, unknown>;
-}
-
-export interface EnginePlugin {
-  id: string; // unique, e.g., "kbts.rules.v1"
-  version: string; // semver
-  requires?: string[]; // plugin or service ids
-  provides?: string[]; // services or capabilities
-  init(ctx: EngineContext): void | Promise<void>; // register services, events
-  start?(ctx: EngineContext): void; // engine started
-  update?(ctx: EngineContext, dt: number): void; // fixed tick
-  render?(ctx: EngineContext, alpha: number): void; // optional (renderer uses)
-  stop?(ctx: EngineContext): void; // engine stopped
-  dispose?(ctx: EngineContext): void; // cleanup
-}
-
-export interface RendererPlugin extends EnginePlugin {
-  kind: 'renderer';
-  mount(target: HTMLElement): void;
-  resize?(w: number, h: number): void;
+  engine: Engine;           // engine control methods
+  events: EventBus;         // pub/sub messaging
+  services: ServiceLocator; // dependency injection
+  logger: Logger;           // leveled logging
+  rng: RNG;                // deterministic random
+  time: Time;              // timing services
+  state: StateStore<any>;  // game state management
+  config: Record<string, unknown>; // configuration
 }
 ```
 
-### Events (topics)
+### Renderer Plugin Extension
 
-- engine.init, engine.start, engine.stop, engine.tick, engine.snapshot
-- input.* (mouse.down, mouse.move, key.down, key.up, wheel)
-- map.* (tile.changed, chunk.loaded, chunk.unloaded)
-- entity.* (created, updated, removed)
-- worldgen.* (start, progress, done)
-- render.request, render.after
-- save.request, save.done, load.request, load.done
+Renderer plugins extend the base interface with display-specific methods:
 
-## State and Determinism
+```typescript
+export interface RendererPlugin extends EnginePlugin {
+  kind: 'renderer';
+  mount(target: HTMLElement): void;          // attach to DOM element
+  resize?(w: number, h: number): void;       // handle viewport changes
+  getCanvas?(): HTMLCanvasElement | null;    // access underlying canvas
+}
+```
 
-- StateStore manages a plain, serializable tree (JSON-compatible) with versioning.
+## Event System Architecture
+
+The event bus enables decoupled communication between plugins. Standard event topics include:
+
+### Engine Events
+- `engine.init` - Engine initialization complete
+- `engine.start` - Engine started
+- `engine.stop` - Engine stopped  
+- `engine.tick` - Fixed timestep tick
+- `engine.snapshot` - State snapshot created
+
+### Input Events
+- `input.mouse.down` - Mouse button pressed
+- `input.mouse.move` - Mouse movement
+- `input.key.down` - Keyboard key pressed
+- `input.key.up` - Keyboard key released
+
+### Game Events
+- `map.tile.changed` - Tile state modified
+- `worldgen.start` - World generation started
+- `worldgen.progress` - Generation progress update
+- `worldgen.done` - World generation complete
+
+## State Management and Serialization
+
+The engine uses a modern `GameState` interface that is fully serializable:
+
+```typescript
+export interface GameState {
+  seed: number;           // Random seed for deterministic behavior
+  tick: number;           // Current simulation tick
+  map: {
+    width: number;
+    height: number;
+    cells: Cell[];        // Flat array of map cells
+  };
+  resources: {
+    gold: number;
+    food: number;
+    wood: number;
+    people: number;
+    actions: number;
+  };
+  game: {
+    year: number;
+    sel: number | null;   // Selected tile index
+    fogEnabled: boolean;
+  };
+  entities: Record<string, Entity>; // Future extensibility
+}
+```
+
+### State Features
+
+- **Deterministic** - All randomness controlled by seeded RNG
+- **Serializable** - JSON-compatible for save/load functionality
+- **Versioned** - Snapshot support for undo/redo and debugging
+- **Reactive** - Change subscriptions for UI updates
+- **Migration Ready** - Conversion utilities for legacy formats
+
+### Backward Compatibility
+
+The engine maintains compatibility with the original monolithic code through conversion utilities:
+- `legacyToGameState()` - Convert old state format to new
+- `gameStateToLegacy()` - Convert new state format to old
+
+## How to Use the Engine
+
+### Basic Setup
+
+```typescript
+import { GameEngine } from './engine';
+import { Canvas2DRenderer } from './plugins/renderer/canvas2d/Canvas2DRenderer';
+import { IslandWorldgenPlugin } from './plugins/worldgen/islands/IslandWorldgen';
+
+const engine = new GameEngine({
+  seed: 'my-game-seed',
+  timestepMs: 33.333, // 30 Hz simulation
+  plugins: [
+    new Canvas2DRenderer(),
+    new IslandWorldgenPlugin(),
+    // Add more plugins as needed
+  ],
+  config: {
+    worldSize: 'medium', // small, medium, large
+    debug: true
+  }
+});
+
+// Mount to DOM element
+const gameContainer = document.getElementById('game');
+await engine.init();
+engine.start();
+
+// Access engine services
+const renderer = engine.services.get('renderer');
+const worldgen = engine.services.get('worldgen');
+```
+
+### Runtime Renderer Switching
+
+```typescript
+// Switch from 2D to 3D renderer
+const threeRenderer = new ThreeRenderer();
+await engine.switchRenderer(threeRenderer);
+```
+
+### Event Handling
+
+```typescript
+// Listen for game events
+engine.events.subscribe('worldgen.done', (mapData) => {
+  console.log('World generation complete:', mapData);
+});
+
+// Trigger custom events
+engine.events.publish('game.pause', { reason: 'user-request' });
+```
+
+## How to Extend the Engine
+
+### Creating a New Plugin
+
+1. **Implement the EnginePlugin interface:**
+
+```typescript
+export class MyCustomPlugin implements EnginePlugin {
+  id = 'my-custom-plugin.v1';
+  version = '1.0.0';
+  requires = ['core-service']; // Optional dependencies
+  provides = ['my-service'];   // Services this plugin exposes
+
+  async init(ctx: EngineContext): Promise<void> {
+    // Register services and event handlers
+    ctx.services.provide('my-service', new MyService());
+    
+    ctx.events.subscribe('engine.tick', this.onTick.bind(this));
+  }
+
+  start(ctx: EngineContext): void {
+    ctx.logger.info('MyCustomPlugin started');
+  }
+
+  update(ctx: EngineContext, dt: number): void {
+    // Fixed-timestep simulation updates
+  }
+
+  render(ctx: EngineContext, alpha: number): void {
+    // Interpolated rendering (optional)
+  }
+
+  dispose(ctx: EngineContext): void {
+    // Cleanup resources
+  }
+
+  private onTick(payload: any): void {
+    // Handle engine tick events
+  }
+}
+```
+
+2. **Register the plugin:**
+
+```typescript
+const engine = new GameEngine({
+  plugins: [
+    new MyCustomPlugin(),
+    // ... other plugins
+  ]
+});
+```
+
+### Creating a Custom Renderer
+
+Renderer plugins extend the base interface with display-specific methods:
+
+```typescript
+export class MyRendererPlugin implements RendererPlugin {
+  kind = 'renderer' as const;
+  id = 'my-renderer.v1';
+  version = '1.0.0';
+  
+  private canvas?: HTMLCanvasElement;
+  private ctx?: CanvasRenderingContext2D;
+
+  async init(ctx: EngineContext): Promise<void> {
+    ctx.services.provide('renderer', this);
+  }
+
+  mount(target: HTMLElement): void {
+    this.canvas = document.createElement('canvas');
+    this.ctx = this.canvas.getContext('2d')!;
+    target.appendChild(this.canvas);
+  }
+
+  render(ctx: EngineContext, alpha: number): void {
+    const state = ctx.state.get();
+    // Custom rendering logic using state data
+    this.drawMap(state.map);
+  }
+
+  resize(w: number, h: number): void {
+    if (this.canvas) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+  }
+
+  getCanvas(): HTMLCanvasElement | null {
+    return this.canvas || null;
+  }
+
+  private drawMap(map: any): void {
+    // Implement custom map rendering
+  }
+}
+```
+
+### Adding Custom Services
+
+Services provide shared functionality across plugins:
+
+```typescript
+class MyDataService {
+  private data: Map<string, any> = new Map();
+
+  store(key: string, value: any): void {
+    this.data.set(key, value);
+  }
+
+  retrieve(key: string): any {
+    return this.data.get(key);
+  }
+}
+
+// Register in plugin init
+ctx.services.provide('data-service', new MyDataService());
+
+// Use in other plugins
+const dataService = ctx.services.get<MyDataService>('data-service');
+```
+
+## File Structure
+
+```
+frontend/src/
+├── engine/
+│   ├── index.ts              # Engine exports
+│   ├── core/                 # Core engine components
+│   │   ├── Engine.ts         # Main game engine
+│   │   ├── EventBus.ts       # Pub/sub messaging
+│   │   ├── Services.ts       # Dependency injection
+│   │   ├── StateStore.ts     # State management
+│   │   ├── Time.ts           # Timing services
+│   │   ├── RNG.ts            # Deterministic random
+│   │   └── Logger.ts         # Logging service
+│   ├── contracts/            # Type definitions
+│   │   ├── plugins.ts        # Plugin interfaces
+│   │   └── types.ts          # Game state types
+│   ├── services/             # Shared services
+│   │   ├── tileAtlas.ts      # Texture management
+│   │   ├── WorldGenService.ts # World generation
+│   │   └── TerrainEditingService.ts
+│   └── utilities/            # Utility functions
+│       └── autotile.ts       # Auto-tiling algorithms
+└── plugins/                  # Plugin implementations
+    ├── index.ts              # Plugin exports
+    ├── core/                 # Foundation plugins
+    ├── renderer/             # Rendering plugins
+    ├── worldgen/             # World generation
+    ├── business/             # Game logic
+    ├── ui/                   # User interface
+    └── input/                # Input handling
+```
+
+## Development Workflow
+
+### Testing
+
+The engine includes comprehensive tests accessible via browser console:
+
+```javascript
+// Run all engine tests
+KBTS_ENGINE_TESTS.runAll();
+
+// Test specific components
+KBTS_ENGINE_TESTS.testRNGDeterminism();
+KBTS_ENGINE_TESTS.testRendererPlugins();
+KBTS_ENGINE_TESTS.testWorldgenPlugins();
+```
+
+### Debugging
+
+```javascript
+// Access engine instance
+const engine = window.KBTS_ENGINE;
+
+// Check current state
+console.log(engine.getState());
+
+// Examine plugin services
+const renderer = engine.services.get('renderer');
+const worldgen = engine.services.get('worldgen');
+
+// Monitor events
+engine.events.subscribe('*', (topic, payload) => {
+  console.log(`Event: ${topic}`, payload);
+});
+```
+
+This architecture provides a solid foundation for building complex 4X games while maintaining modularity, testability, and extensibility.
 - RNG backed by a seedable generator; advancing only in update() ensures determinism.
 - Time service exposes tick count and dt; no plugin should call Date.now directly.
 - Snapshots support: takeSnapshot(), restoreSnapshot(), diff patches.
